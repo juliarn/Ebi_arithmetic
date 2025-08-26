@@ -1,9 +1,3 @@
-use anyhow::{Result, anyhow};
-use itertools::iproduct;
-use num::BigUint;
-use num_bigint::ToBigUint;
-use std::ops::Mul;
-
 use crate::{
     ebi_number::{One, Zero},
     matrix::{
@@ -14,6 +8,13 @@ use crate::{
         loose_fraction::{self, LooseFraction, Type},
     },
 };
+use anyhow::{anyhow, Result};
+use fraction::Integer;
+use itertools::iproduct;
+use num::BigUint;
+use num_bigint::ToBigUint;
+use num_traits::ToPrimitive;
+use std::ops::Mul;
 
 impl Mul for &FractionMatrixExact {
     type Output = Result<FractionMatrixExact>;
@@ -49,6 +50,7 @@ impl Mul for &FractionMatrixExact {
                 let n = self.number_of_rows();
                 let m = self.number_of_columns();
                 let p = rhs.number_of_columns();
+
                 let mut new_types = vec![Type::Plus; p * n];
                 let mut new_num = vec![0; p * n];
                 let mut new_den = vec![1; p * n];
@@ -342,24 +344,19 @@ impl Mul for &FractionMatrixEnum {
 
 #[cfg(test)]
 mod tests {
-
+    use num_bigint::ToBigUint;
+    use rand::Rng;
     use std::time::Instant;
 
-    use num::integer::Roots;
-    use num_bigint::ToBigUint;
-    use rand::{Rng, RngCore};
-
+    use crate::matrix::fraction_matrix_exact::FractionMatrixExact;
+    use crate::matrix::fraction_matrix_f64::FractionMatrixF64;
     use crate::{
         ebi_number::{One, Zero},
         exact::MaybeExact,
         f, f0, f1,
         fraction::Fraction,
         fraction_f64::FractionF64,
-        matrix::{
-            ebi_matrix::EbiMatrix, fraction_matrix::FractionMatrix,
-            fraction_matrix_exact::FractionMatrixExact, fraction_matrix_f64::FractionMatrixF64,
-            loose_fraction::Type,
-        },
+        matrix::{ebi_matrix::EbiMatrix, fraction_matrix::FractionMatrix, loose_fraction::Type},
     };
 
     #[test]

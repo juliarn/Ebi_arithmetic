@@ -57,7 +57,6 @@ pub fn checked_add_assign_mul(
     num_c: &u64,
     den_c: &u64,
 ) -> bool {
-    todo!();
     let type_prod = type_b * type_c;
     if let Some(new_type) = *type_a + type_prod {
         //the result type has been decided

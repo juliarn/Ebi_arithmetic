@@ -24,6 +24,7 @@ pub mod matrix {
     pub mod identity_minus;
     pub mod loose_fraction;
     pub mod mul;
+    pub mod mul_gpu;
     pub mod gauss_jordan;
 }
 
@@ -37,4 +38,9 @@ pub mod fraction_raw {
     pub mod zero;
     pub mod neg;
     pub mod sub_assign;
+}
+
+pub mod shader {
+    pub mod matrix_mul;
+    pub mod state;
 }
