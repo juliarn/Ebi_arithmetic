@@ -20,7 +20,6 @@ pub type FractionMatrix = super::fraction_matrix_exact::FractionMatrixExact;
 
 //======================== common code ========================//
 
-
 #[macro_export]
 macro_rules! push_columns {
     ($zero:expr, $number_of_columns_to_add:expr, $values:expr, $number_of_rows:expr, $number_of_columns:expr) => {
@@ -48,29 +47,20 @@ macro_rules! pop_front_columns {
 //======================== tests ========================//
 #[cfg(test)]
 mod tests {
+
     use crate::{
-        ebi_number::Zero,
+        Inversion,
+        Zero,
+        ebi_matrix::EbiMatrix,
         f, f0,
-        fraction::Fraction,
-        matrix::{ebi_matrix::EbiMatrix, fraction_matrix::FractionMatrix, inversion::Inversion},
+        fraction::fraction::Fraction,
+        matrix::fraction_matrix::FractionMatrix,
     };
 
     #[test]
     fn fraction_matrix() {
         let m: FractionMatrix = vec![vec![f!(1, 4), f!(2, 5), f!(8, 3)]].try_into().unwrap();
-
-        let _ = m.reduce();
-    }
-
-    #[test]
-    fn fraction_matrix_abnormal() {
-        let m = vec![vec![
-            Fraction::infinity(),
-            Fraction::neg_infinity(),
-            f!(8, 3),
-        ]];
-        let m: FractionMatrix = m.try_into().unwrap();
-        let _ = m.reduce();
+        assert_eq!(m, m);
     }
 
     #[test]
@@ -79,7 +69,6 @@ mod tests {
         let m: FractionMatrix = m.try_into().unwrap();
         assert_eq!(m.number_of_rows(), 1);
         assert_eq!(m.number_of_columns(), 0);
-        let _ = m.reduce();
     }
 
     #[test]
@@ -110,7 +99,7 @@ mod tests {
         // println!("{:?}", m1);
         // println!("{:?}", m3);
 
-        assert!(m1.inner_eq(&m3));
+        assert_eq!(m1, m3);
     }
 
     #[test]
@@ -126,7 +115,7 @@ mod tests {
         // println!("{:?}", m1);
         // println!("{:?}", m3);
 
-        assert!(m1.inner_eq(&m3));
+        assert_eq!(m1, m3);
     }
 
     #[test]
@@ -160,5 +149,32 @@ mod tests {
         println!("{}", m2);
 
         assert!(m1.eq(&mut m2));
+    }
+
+    #[test]
+    fn display_empty() {
+        let m = FractionMatrix::new(0, 0);
+        let _ = format!("{}", m);
+
+        let m = FractionMatrix::new(1, 0);
+        let _ = format!("{}", m);
+
+        let m = FractionMatrix::new(0, 1);
+        let _ = format!("{}", m);
+    }
+
+    #[test]
+    fn to_vec_empty() {
+        let m = FractionMatrix::new(0, 0);
+        let u: Vec<Vec<Fraction>> = vec![];
+        assert_eq!(m.to_vec(), u);
+
+        let m = FractionMatrix::new(1, 0);
+        let u: Vec<Vec<Fraction>> = vec![vec![]];
+        assert_eq!(m.to_vec(), u);
+
+        let m = FractionMatrix::new(0, 1);
+        let u: Vec<Vec<Fraction>> = vec![];
+        assert_eq!(m.to_vec(), u);
     }
 }

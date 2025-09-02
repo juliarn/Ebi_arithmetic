@@ -6,49 +6,28 @@ use std::{
 use anyhow::{Error, Result, anyhow};
 
 use crate::{
-    exact::{self, MaybeExact, is_exact_globally},
-    fraction_enum::FractionEnum,
-    fraction_exact::FractionExact,
-    fraction_f64::FractionF64,
-    matrix::{
-        ebi_matrix::EbiMatrix, fraction_matrix_exact::FractionMatrixExact,
-        fraction_matrix_f64::FractionMatrixF64,
+    ebi_matrix::EbiMatrix,
+    exact::MaybeExact,
+    exact::{self, is_exact_globally},
+    fraction::{
+        fraction_enum::FractionEnum, fraction_exact::FractionExact, fraction_f64::FractionF64,
     },
+    matrix::{fraction_matrix_exact::FractionMatrixExact, fraction_matrix_f64::FractionMatrixF64},
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum FractionMatrixEnum {
     Approx(FractionMatrixF64),
     Exact(FractionMatrixExact),
     CannotCombineExactAndApprox,
 }
 
-impl FractionMatrixEnum {
-    pub fn to_vec(self) -> Result<Vec<Vec<FractionEnum>>> {
-        match self {
-            FractionMatrixEnum::Approx(m) => Ok(m
-                .to_vec()?
-                .into_iter()
-                .map(|row| row.into_iter().map(|f| FractionEnum::Approx(f.0)).collect())
-                .collect()),
-            FractionMatrixEnum::Exact(m) => Ok(m
-                .to_vec()?
-                .into_iter()
-                .map(|row| row.into_iter().map(|f| FractionEnum::Exact(f.0)).collect())
-                .collect()),
-            FractionMatrixEnum::CannotCombineExactAndApprox => {
-                Err(anyhow!("cannot combine exact and approximate arithmetic"))
-            }
-        }
-    }
-}
-
 impl EbiMatrix<FractionEnum> for FractionMatrixEnum {
-    fn new(number_of_columns: usize) -> Self {
+    fn new(number_of_rows: usize, number_of_columns: usize) -> Self {
         if exact::is_exact_globally() {
-            Self::Exact(FractionMatrixExact::new(number_of_columns))
+            Self::Exact(FractionMatrixExact::new(number_of_rows, number_of_columns))
         } else {
-            Self::Approx(FractionMatrixF64::new(number_of_columns))
+            Self::Approx(FractionMatrixF64::new(number_of_rows, number_of_columns))
         }
     }
 
@@ -68,34 +47,18 @@ impl EbiMatrix<FractionEnum> for FractionMatrixEnum {
         }
     }
 
-    fn reduce(self) -> Self {
-        match self {
-            FractionMatrixEnum::Approx(m) => FractionMatrixEnum::Approx(m.reduce()),
-            FractionMatrixEnum::Exact(m) => FractionMatrixEnum::Exact(m.reduce()),
-            FractionMatrixEnum::CannotCombineExactAndApprox => self,
-        }
-    }
-
-    fn eq(&mut self, other: &mut Self) -> bool {
-        match (self, other) {
-            (FractionMatrixEnum::Approx(m1), FractionMatrixEnum::Approx(m2)) => m1.eq(m2),
-            (FractionMatrixEnum::Exact(m1), FractionMatrixEnum::Exact(m2)) => m1.eq(m2),
-            _ => false,
-        }
-    }
-
-    fn inner_eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (FractionMatrixEnum::Approx(m1), FractionMatrixEnum::Approx(m2)) => m1.inner_eq(m2),
-            (FractionMatrixEnum::Exact(m1), FractionMatrixEnum::Exact(m2)) => m1.inner_eq(m2),
-            _ => false,
-        }
-    }
-
     fn push_columns(&mut self, number_of_columns_to_add: usize) {
         match self {
             FractionMatrixEnum::Approx(m) => m.push_columns(number_of_columns_to_add),
             FractionMatrixEnum::Exact(m) => m.push_columns(number_of_columns_to_add),
+            FractionMatrixEnum::CannotCombineExactAndApprox => {}
+        }
+    }
+
+    fn push_rows(&mut self, number_of_rows_to_add: usize) {
+        match self {
+            FractionMatrixEnum::Approx(m) => m.push_rows(number_of_rows_to_add),
+            FractionMatrixEnum::Exact(m) => m.push_rows(number_of_rows_to_add),
             FractionMatrixEnum::CannotCombineExactAndApprox => {}
         }
     }
@@ -133,6 +96,14 @@ impl EbiMatrix<FractionEnum> for FractionMatrixEnum {
         mem::swap(self, &mut FractionMatrixEnum::CannotCombineExactAndApprox);
     }
 
+    fn set_zero(&mut self, row: usize, column: usize) {
+        match self {
+            FractionMatrixEnum::Approx(m) => m.set_zero(row, column),
+            FractionMatrixEnum::Exact(m) => m.set_zero(row, column),
+            FractionMatrixEnum::CannotCombineExactAndApprox => {}
+        }
+    }
+
     fn set_one(&mut self, row: usize, column: usize) {
         match self {
             FractionMatrixEnum::Approx(m) => m.set_one(row, column),
@@ -140,102 +111,92 @@ impl EbiMatrix<FractionEnum> for FractionMatrixEnum {
             FractionMatrixEnum::CannotCombineExactAndApprox => {}
         }
     }
-}
 
-impl MaybeExact for FractionMatrixEnum {
-    type Approximate = ();
-
-    type Exact = FractionMatrixEnum;
-
-    fn is_exact(&self) -> bool {
-        true
-    }
-
-    fn extract_approx(&self) -> anyhow::Result<&()> {
-        Err(anyhow!("cannot extract a float from a fraction"))
-    }
-
-    fn extract_exact(&self) -> anyhow::Result<&FractionMatrixEnum> {
-        Ok(self)
-    }
-}
-
-impl TryFrom<(usize, Vec<FractionEnum>)> for FractionMatrixEnum {
-    type Error = Error;
-
-    fn try_from(value: (usize, Vec<FractionEnum>)) -> Result<Self> {
-        let (number_of_columns, values) = value;
-        let number_of_rows = values.len() / number_of_columns;
-
-        if number_of_rows * number_of_columns != values.len() {
-            return Err(anyhow!("some cells of the matrix are not provided"));
+    fn is_one(&self, row: usize, column: usize) -> bool {
+        match self {
+            FractionMatrixEnum::Approx(m) => m.is_one(row, column),
+            FractionMatrixEnum::Exact(m) => m.is_one(row, column),
+            FractionMatrixEnum::CannotCombineExactAndApprox => false,
         }
+    }
 
-        if number_of_rows > 0 {
-            if let Some(x) = values.iter().next() {
-                //proper matrix
-                if x.is_exact() {
-                    //exact mode
-                    let mut new_values = Vec::with_capacity(values.len());
-                    for f in values {
-                        match f {
-                            FractionEnum::Exact(f) => new_values.push(FractionExact(f)),
-                            FractionEnum::Approx(_) => {
-                                return Err(anyhow!(
-                                    "cannot combine approximate and exact arithmetic"
-                                ));
-                            }
-                            FractionEnum::CannotCombineExactAndApprox => {
-                                return Err(anyhow!(
-                                    "cannot combine approximate and exact arithmetic"
-                                ));
-                            }
-                        }
-                    }
+    fn to_vec(self) -> Vec<Vec<FractionEnum>> {
+        match self {
+            FractionMatrixEnum::Approx(m) => m
+                .to_vec()
+                .into_iter()
+                .map(|r| r.into_iter().map(|f| FractionEnum::Approx(f.0)).collect())
+                .collect(),
+            FractionMatrixEnum::Exact(m) => m
+                .to_vec()
+                .into_iter()
+                .map(|r| r.into_iter().map(|f| FractionEnum::Exact(f.0)).collect())
+                .collect(),
+            FractionMatrixEnum::CannotCombineExactAndApprox => vec![],
+        }
+    }
 
-                    let m: FractionMatrixExact = (number_of_columns, new_values).try_into()?;
-                    Ok(Self::Exact(m))
+    fn increase(&mut self, row: usize, column: usize, value: &FractionEnum) {
+        match self {
+            FractionMatrixEnum::Approx(m) => {
+                if let Ok(f) = value.approx_ref() {
+                    m.values[row * m.number_of_columns + column] += f;
                 } else {
-                    //approximate mode
-                    let mut new_values = Vec::with_capacity(values.len());
-                    for f in values {
-                        match f {
-                            FractionEnum::Exact(_) => {
-                                return Err(anyhow!(
-                                    "cannot combine approximate and exact arithmetic"
-                                ));
-                            }
-                            FractionEnum::Approx(f) => new_values.push(FractionF64(f)),
-                            FractionEnum::CannotCombineExactAndApprox => {
-                                return Err(anyhow!(
-                                    "cannot combine approximate and exact arithmetic"
-                                ));
-                            }
-                        }
-                    }
-
-                    let m: FractionMatrixF64 = (number_of_columns, new_values).try_into()?;
-                    Ok(Self::Approx(m))
-                }
-            } else {
-                //no columns
-                if is_exact_globally() {
-                    let new_rows = vec![vec![]; values.len()];
-                    let m: FractionMatrixExact = new_rows.try_into()?;
-                    Ok(Self::Exact(m))
-                } else {
-                    let new_rows = vec![vec![]; values.len()];
-                    let m: FractionMatrixF64 = new_rows.try_into()?;
-                    Ok(Self::Approx(m))
+                    *self = FractionMatrixEnum::CannotCombineExactAndApprox;
                 }
             }
-        } else {
-            //no rows
-            if is_exact_globally() {
-                Ok(Self::Exact(FractionMatrixExact::new(0)))
-            } else {
-                Ok(Self::Approx(FractionMatrixF64::new(0)))
+            FractionMatrixEnum::Exact(m) => {
+                if let Ok(f) = value.exact_ref() {
+                    m.values[row * m.number_of_columns + column] += f;
+                } else {
+                    *self = FractionMatrixEnum::CannotCombineExactAndApprox;
+                }
             }
+            FractionMatrixEnum::CannotCombineExactAndApprox => {}
+        }
+    }
+
+    fn decrease(&mut self, row: usize, column: usize, value: &FractionEnum) {
+        match self {
+            FractionMatrixEnum::Approx(m) => {
+                if let Ok(f) = value.approx_ref() {
+                    m.values[row * m.number_of_columns + column] -= f;
+                } else {
+                    *self = FractionMatrixEnum::CannotCombineExactAndApprox;
+                }
+            }
+            FractionMatrixEnum::Exact(m) => {
+                if let Ok(f) = value.exact_ref() {
+                    m.values[row * m.number_of_columns + column] -= f;
+                } else {
+                    *self = FractionMatrixEnum::CannotCombineExactAndApprox;
+                }
+            }
+            FractionMatrixEnum::CannotCombineExactAndApprox => {}
+        }
+    }
+
+    fn set_row_zero(&mut self, row: usize) {
+        match self {
+            FractionMatrixEnum::Approx(m) => m.set_row_zero(row),
+            FractionMatrixEnum::Exact(m) => m.set_row_zero(row),
+            FractionMatrixEnum::CannotCombineExactAndApprox => {}
+        }
+    }
+
+    fn is_positive(&self, row: usize, column: usize) -> bool {
+        match self {
+            FractionMatrixEnum::Approx(m) => m.is_positive(row, column),
+            FractionMatrixEnum::Exact(m) => m.is_positive(row, column),
+            FractionMatrixEnum::CannotCombineExactAndApprox => false,
+        }
+    }
+
+    fn is_negative(&self, row: usize, column: usize) -> bool {
+        match self {
+            FractionMatrixEnum::Approx(m) => m.is_negative(row, column),
+            FractionMatrixEnum::Exact(m) => m.is_negative(row, column),
+            FractionMatrixEnum::CannotCombineExactAndApprox => false,
         }
     }
 }
@@ -322,9 +283,9 @@ impl TryFrom<Vec<Vec<FractionEnum>>> for FractionMatrixEnum {
         } else {
             //no rows
             if is_exact_globally() {
-                Ok(Self::Exact(FractionMatrixExact::new(0)))
+                Ok(Self::Exact(FractionMatrixExact::new(0, 0)))
             } else {
-                Ok(Self::Approx(FractionMatrixF64::new(0)))
+                Ok(Self::Approx(FractionMatrixF64::new(0, 0)))
             }
         }
     }
@@ -335,48 +296,9 @@ impl Display for FractionMatrixEnum {
         match self {
             Self::Approx(m) => Display::fmt(m, f),
             Self::Exact(m) => Display::fmt(m, f),
-            Self::CannotCombineExactAndApprox => write!(f, "CannotCombineExactAndApprox"),
+            Self::CannotCombineExactAndApprox => {
+                write!(f, "cannot combine approximate and exact arithmetic")
+            }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-
-    use crate::{
-        f_en,
-        fraction_enum::FractionEnum,
-        matrix::{ebi_matrix::EbiMatrix, fraction_matrix_enum::FractionMatrixEnum},
-    };
-
-    #[test]
-    fn fraction_matrix_abnormal() {
-        let mut m1: FractionMatrixEnum = vec![vec![
-            FractionEnum::infinity(),
-            FractionEnum::neg_infinity(),
-            f_en!(8, 3),
-        ]]
-        .try_into()
-        .unwrap();
-
-        let mut m2 = m1.clone().reduce();
-
-        assert!(m1.eq(&mut m2))
-    }
-
-    #[test]
-    fn fraction_matrix_reversible() {
-        let m1 = vec![vec![
-            FractionEnum::infinity(),
-            FractionEnum::neg_infinity(),
-            f_en!(8, 3),
-        ]];
-
-        let m2: FractionMatrixEnum = m1.clone().try_into().unwrap();
-        let m2 = m2.reduce();
-
-        let m3 = m2.to_vec().unwrap();
-
-        assert_eq!(m1, m3);
     }
 }

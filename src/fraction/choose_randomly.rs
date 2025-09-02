@@ -1,40 +1,16 @@
 use anyhow::{Context, Result, anyhow};
-use fraction::{GenericFraction, Ratio, Sign};
-use num::BigUint;
-use num_bigint::RandBigInt;
-use rand::Rng;
+use malachite::{
+    Natural, base::random::Seed, natural::random::random_naturals_less_than, rational::Rational,
+};
+use rand::{Rng, RngCore};
 
 use crate::{
+    ebi_number::{ChooseRandomly, Zero},
     exact::{MaybeExact, is_exact_globally},
-    fraction_enum::FractionEnum,
-    fraction_exact::FractionExact,
-    fraction_f64::FractionF64,
-    ebi_number::Zero,
+    fraction::{
+        fraction_enum::FractionEnum, fraction_exact::FractionExact, fraction_f64::FractionF64,
+    },
 };
-
-pub trait ChooseRandomly {
-    type Cache;
-    /**
-     * Return a random index from 0 (inclusive) to the length of the list (exclusive).
-     * The likelihood of each index to be returned is proportional to the value of the fraction at that index.
-     *
-     * The fractions do not need to sum to 1.
-     */
-    fn choose_randomly(fractions: &Vec<Self>) -> Result<usize>
-    where
-        Self: Sized;
-
-    fn choose_randomly_create_cache<'a>(
-        fractions: impl Iterator<Item = &'a Self>,
-    ) -> Result<Self::Cache>
-    where
-        Self: Sized,
-        Self: 'a;
-
-    fn choose_randomly_cached(cache: &Self::Cache) -> usize
-    where
-        Self: Sized;
-}
 
 #[cfg(any(
     all(
@@ -52,7 +28,7 @@ pub type FractionRandomCache = FractionRandomCacheF64;
 pub type FractionRandomCache = FractionRandomCacheExact;
 
 pub enum FractionRandomCacheEnum {
-    Exact(Vec<fraction::BigFraction>, BigUint),
+    Exact(Vec<Rational>, Natural),
     Approx(Vec<f64>),
 }
 
@@ -64,11 +40,14 @@ impl ChooseRandomly for FractionEnum {
             return Err(anyhow!("cannot take an element of an empty list"));
         }
 
-        //normalise the probabilities
+        //normalise the inputs such that they sum to one.
         let mut probabilities: Vec<FractionEnum> = fractions.iter().cloned().collect();
         let sum = probabilities
             .iter()
             .fold(FractionEnum::zero(), |x, y| &x + y);
+        if sum.is_zero() {
+            return Err(anyhow!("sum of fractions is zero"));
+        }
         if sum == FractionEnum::CannotCombineExactAndApprox {
             return Err(anyhow!("cannot combine exact and approximate arithmetic"));
         }
@@ -77,31 +56,32 @@ impl ChooseRandomly for FractionEnum {
             true
         });
 
+        let mut rng = rand::rng();
+
         //select a random value
-        let mut rng = rand::thread_rng();
         let rand_val = if sum.is_exact() {
+            let mut buf = [0u8; 32];
+            rng.fill_bytes(&mut buf);
+            let seed = Seed::from_bytes(buf);
+
             //strategy: the highest denominator determines how much precision we need
-            let temp_zero = BigUint::zero();
             let max_denom = probabilities
                 .iter()
-                .map(|f| {
-                    if let FractionEnum::Exact(e) = f {
-                        e.denom().unwrap()
-                    } else {
-                        &temp_zero
-                    }
+                .map(|f| match f {
+                    FractionEnum::Exact(e) => e.to_denominator(),
+                    _ => unreachable!(),
                 })
                 .max()
                 .unwrap();
             //Generate a random value with the number of bits of the highest denominator. Repeat until this value is <= the max denominator.
-            let mut rand_val = rng.gen_biguint(max_denom.bits());
-            while &rand_val > max_denom {
-                rand_val = rng.gen_biguint(max_denom.bits());
-            }
+            let rand_val = random_naturals_less_than(seed, max_denom.clone())
+                .next()
+                .unwrap();
             //create the fraction from the random nominator and the max denominator
-            FractionEnum::try_from((rand_val, max_denom.clone())).unwrap()
+            FractionEnum::Exact(Rational::from(rand_val) / Rational::from(max_denom.clone()))
         } else {
-            FractionEnum::Approx(rng.gen_range(0.0..=1.0))
+            //approximate mode
+            FractionEnum::Approx(rng.random_range(0.0..=1.0))
         };
 
         let mut cum_prob = FractionEnum::zero();
@@ -126,17 +106,17 @@ impl ChooseRandomly for FractionEnum {
             if let Some(first) = fractions.next() {
                 let mut cumulative_probabilities = vec![
                     first
-                        .extract_exact()
+                        .exact_ref()
                         .with_context(|| "cannot combine exact and approximate arithmetic")?
                         .clone(),
                 ];
-                let mut highest_denom = first.extract_exact()?.denom().unwrap();
+                let mut highest_denom = first.exact_ref()?.to_denominator();
 
                 while let Some(fraction) = fractions.next() {
-                    highest_denom = highest_denom.max(fraction.extract_exact()?.denom().unwrap());
+                    highest_denom = highest_denom.max(fraction.exact_ref()?.to_denominator());
 
                     let mut x = fraction
-                        .extract_exact()
+                        .exact_ref()
                         .with_context(|| "cannot combine exact and approximate arithmetic")?
                         .clone();
                     x += cumulative_probabilities.last().unwrap();
@@ -156,14 +136,14 @@ impl ChooseRandomly for FractionEnum {
             if let Some(first) = fractions.next() {
                 let mut cumulative_probabilities = vec![
                     *first
-                        .extract_approx()
+                        .approx_ref()
                         .with_context(|| "cannot combine exact and approximate arithmetic")?,
                 ];
 
                 while let Some(fraction) = fractions.next() {
                     cumulative_probabilities.push(
                         fraction
-                            .extract_approx()
+                            .approx_ref()
                             .with_context(|| "cannot combine exact and approximate arithmetic")?
                             + cumulative_probabilities.last().unwrap(),
                     );
@@ -183,20 +163,20 @@ impl ChooseRandomly for FractionEnum {
         match cache {
             FractionRandomCacheEnum::Exact(cumulative_probabilities, highest_denom) => {
                 //select a random value
-                let mut rng = rand::thread_rng();
+                let mut rng = rand::rng();
+                let mut buf = [0u8; 32];
+                rng.fill_bytes(&mut buf);
+                let seed = Seed::from_bytes(buf);
                 let rand_val = {
                     //strategy: the highest denominator determines how much precision we need
 
                     //Generate a random value with the number of bits of the highest denominator. Repeat until this value is <= the max denominator.
-                    let mut rand_val = rng.gen_biguint(highest_denom.bits());
-                    while &rand_val > highest_denom {
-                        rand_val = rng.gen_biguint(highest_denom.bits());
-                    }
+                    let rand_val = random_naturals_less_than(seed, highest_denom.clone())
+                        .next()
+                        .unwrap();
+
                     //create the fraction from the random nominator and the max denominator
-                    GenericFraction::Rational(
-                        Sign::Plus,
-                        Ratio::new(rand_val, highest_denom.clone()),
-                    )
+                    Rational::from(rand_val) / Rational::from(highest_denom.clone())
                 };
 
                 match cumulative_probabilities.binary_search(&rand_val) {
@@ -205,8 +185,8 @@ impl ChooseRandomly for FractionEnum {
             }
             FractionRandomCacheEnum::Approx(cumulative_probabilities) => {
                 //select a random value
-                let mut rng = rand::thread_rng();
-                let rand_val = rng.gen_range(0.0..=*cumulative_probabilities.last().unwrap());
+                let mut rng = rand::rng();
+                let rand_val = rng.random_range(0.0..=*cumulative_probabilities.last().unwrap());
 
                 match cumulative_probabilities.binary_search_by(|probe| probe.total_cmp(&rand_val))
                 {
@@ -219,7 +199,7 @@ impl ChooseRandomly for FractionEnum {
 
 pub struct FractionRandomCacheExact {
     cumulative_probabilities: Vec<FractionExact>,
-    highest_denom: BigUint,
+    highest_denom: Natural,
 }
 
 impl ChooseRandomly for FractionExact {
@@ -230,34 +210,39 @@ impl ChooseRandomly for FractionExact {
             return Err(anyhow!("cannot take an element of an empty list"));
         }
 
-        //normalise the probabilities
+        //normalise the inputs such that they sum to one.
         let mut probabilities: Vec<FractionExact> = fractions.iter().cloned().collect();
         let sum = probabilities
             .iter()
             .fold(FractionExact::zero(), |x, y| &x + y);
+        if sum.is_zero() {
+            return Err(anyhow!("sum of fractions is zero"));
+        }
         probabilities.retain_mut(|v| {
             *v /= &sum;
             true
         });
 
         //select a random value
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
+        let mut buf = [0u8; 32];
+        rng.fill_bytes(&mut buf);
+        let seed = Seed::from_bytes(buf);
         let rand_val = {
             //strategy: the highest denominator determines how much precision we need
             let max_denom = probabilities
                 .iter()
                 .map(|f| match f {
-                    FractionExact(e) => e.denom().unwrap(),
+                    FractionExact(e) => e.to_denominator(),
                 })
                 .max()
                 .unwrap();
             //Generate a random value with the number of bits of the highest denominator. Repeat until this value is <= the max denominator.
-            let mut rand_val = rng.gen_biguint(max_denom.bits());
-            while &rand_val > max_denom {
-                rand_val = rng.gen_biguint(max_denom.bits());
-            }
+            let rand_val = random_naturals_less_than(seed, max_denom.clone())
+                .next()
+                .unwrap();
             //create the fraction from the random nominator and the max denominator
-            FractionExact::try_from((rand_val, max_denom.clone())).unwrap()
+            FractionExact(Rational::from(rand_val) / Rational::from(max_denom.clone()))
         };
 
         let mut cum_prob = FractionExact::zero();
@@ -279,10 +264,10 @@ impl ChooseRandomly for FractionExact {
     {
         if let Some(first) = fractions.next() {
             let mut cumulative_probabilities = vec![first.clone()];
-            let mut highest_denom = first.0.denom().unwrap();
+            let mut highest_denom = first.0.to_denominator();
 
             while let Some(fraction) = fractions.next() {
-                highest_denom = highest_denom.max(fraction.0.denom().unwrap());
+                highest_denom = highest_denom.max(fraction.0.to_denominator());
 
                 cumulative_probabilities.push(fraction + cumulative_probabilities.last().unwrap());
             }
@@ -302,17 +287,20 @@ impl ChooseRandomly for FractionExact {
         Self: Sized,
     {
         //select a random value
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
+        let mut buf = [0u8; 32];
+        rng.fill_bytes(&mut buf);
+        let seed = Seed::from_bytes(buf);
         let rand_val = {
             //strategy: the highest denominator determines how much precision we need
 
             //Generate a random value with the number of bits of the highest denominator. Repeat until this value is <= the max denominator.
-            let mut rand_val = rng.gen_biguint(cache.highest_denom.bits());
-            while rand_val > cache.highest_denom {
-                rand_val = rng.gen_biguint(cache.highest_denom.bits());
-            }
+            let rand_val = random_naturals_less_than(seed, cache.highest_denom.clone())
+                .next()
+                .unwrap();
+
             //create the fraction from the random nominator and the max denominator
-            FractionExact::try_from((rand_val, cache.highest_denom.clone())).unwrap()
+            FractionExact(Rational::from(rand_val) / Rational::from(cache.highest_denom.clone()))
         };
 
         match cache.cumulative_probabilities.binary_search(&rand_val) {
@@ -344,8 +332,8 @@ impl ChooseRandomly for FractionF64 {
         });
 
         //select a random value
-        let mut rng = rand::thread_rng();
-        let rand_val = FractionF64(rng.gen_range(0.0..=1.0));
+        let mut rng = rand::rng();
+        let rand_val = FractionF64(rng.random_range(0.0..=1.0));
 
         let mut cum_prob = FractionF64::zero();
         for (index, value) in probabilities.iter().enumerate() {
@@ -384,14 +372,14 @@ impl ChooseRandomly for FractionF64 {
         Self: Sized,
     {
         //select a random value
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let rand_val = FractionF64::from(
-            rng.gen_range(
+            rng.random_range(
                 0.0..=*cache
                     .cumulative_probabilities
                     .last()
                     .unwrap()
-                    .extract_approx()
+                    .approx_ref()
                     .unwrap(),
             ),
         );

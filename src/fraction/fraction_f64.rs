@@ -10,151 +10,16 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::{Error, Result, anyhow};
-
-use crate::{
-    ebi_number::{EbiNumber, Infinite, Normal, Round},
-    exact::MaybeExact,
-    fraction::EPSILON,
+use anyhow::{Error, anyhow};
+use malachite::{
+    base::{num::conversion::traits::RoundingFrom, rounding_modes::RoundingMode::Nearest},
+    rational::Rational,
 };
 
-use super::ebi_number::{One, Signed, Zero};
+use crate::{ebi_number::Zero, fraction::fraction::EPSILON};
 
 #[derive(Debug, Clone, Copy)]
-pub struct FractionF64(pub f64);
-
-impl FractionF64 {
-    pub fn two() -> Self {
-        Self(2.0)
-    }
-
-    pub fn one_minus(self) -> Self {
-        Self(1.0 - self.0)
-    }
-
-    pub fn is_sign_negative(&self) -> bool {
-        self.0.is_sign_negative()
-    }
-
-    pub fn is_sign_positive(&self) -> bool {
-        self.0.is_sign_positive()
-    }
-
-    /// Returns true if the value is Infinity (does not matter positive or negative)
-    pub fn is_infinite(&self) -> bool {
-        self.0.is_infinite()
-    }
-
-    pub fn is_nan(&self) -> bool {
-        self.0.is_nan()
-    }
-
-    pub fn infinity() -> Self {
-        Self(f64::INFINITY)
-    }
-
-    pub fn neg_infinity() -> Self {
-        Self(f64::NEG_INFINITY)
-    }
-
-    pub fn nan() -> Self {
-        Self(f64::NAN)
-    }
-
-    pub fn sqrt_abs(&self, _decimal_places: u32) -> FractionF64 {
-        Self(self.0.abs().sqrt())
-    }
-
-    /**
-     * 1/self
-     */
-    pub fn recip(&self) -> Self {
-        Self(self.0.recip())
-    }
-}
-
-impl EbiNumber for FractionF64 {}
-
-impl MaybeExact for FractionF64 {
-    type Approximate = f64;
-    type Exact = fraction::BigFraction;
-
-    fn is_exact(&self) -> bool {
-        false
-    }
-
-    fn extract_approx(&self) -> Result<&f64> {
-        Ok(&self.0)
-    }
-
-    fn extract_exact(&self) -> Result<&fraction::BigFraction> {
-        Err(anyhow!("cannot extract a fraction from a float"))
-    }
-}
-
-impl One for FractionF64 {
-    fn one() -> Self {
-        Self(1.0)
-    }
-
-    fn is_one(&self) -> bool {
-        (self.0 - 1.0).abs() - &EPSILON < 0.0
-    }
-}
-
-impl Zero for FractionF64 {
-    fn zero() -> Self {
-        Self(0.0)
-    }
-
-    fn is_zero(&self) -> bool {
-        self.0.abs() - &EPSILON < 0.0
-    }
-}
-
-impl Signed for FractionF64 {
-    fn abs(&self) -> Self {
-        Self(self.0.abs())
-    }
-
-    fn is_positive(&self) -> bool {
-        self.0 != 0f64 && self.0 > EPSILON
-    }
-
-    fn is_negative(&self) -> bool {
-        self.0 != 0f64 && self.0 < -EPSILON
-    }
-
-    fn is_not_negative(&self) -> bool {
-        self.0.is_not_negative()
-    }
-
-    fn is_not_positive(&self) -> bool {
-        self.0.is_not_positive()
-    }
-}
-
-impl Infinite for FractionF64 {
-    fn is_infinite(&self) -> bool {
-        self.0.is_infinite()
-    }
-}
-
-impl Normal for FractionF64 {
-    fn is_nan(&self) -> bool {
-        self.0.is_nan()
-    }
-}
-
-impl Round for FractionF64 {
-    fn floor(self) -> Self {
-        FractionF64(self.0.floor())
-    }
-
-    fn ceil(self) -> Self {
-        FractionF64(self.0.ceil())
-    }
-}
+pub struct FractionF64(pub(crate) f64);
 
 impl Default for FractionF64 {
     fn default() -> Self {
@@ -164,15 +29,6 @@ impl Default for FractionF64 {
 
 impl PartialEq for FractionF64 {
     fn eq(&self, other: &Self) -> bool {
-        if self.is_nan() && other.is_nan() {
-            return true;
-        }
-        if self.is_positive_infinite() && other.is_positive_infinite() {
-            return true;
-        }
-        if self.is_negative_infinite() && other.is_negative_infinite() {
-            return true;
-        }
         match (self, other) {
             (FractionF64(l0), FractionF64(r0)) => l0 - EPSILON <= *r0 && *r0 <= l0 + EPSILON,
         }
@@ -213,12 +69,13 @@ impl FromStr for FractionF64 {
     type Err = Error;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        match f64::from_str(s) {
-            Ok(f) => Ok(Self(f)),
-            Err(_) => match fraction::Fraction::from_str(s) {
-                Ok(f) => Ok(Self(format!("{:.20}", f).parse::<f64>()?)),
-                Err(e) => Err(e.into()),
-            },
+        if let Ok(float) = f64::from_str(s) {
+            Ok(Self(float))
+        } else {
+            match Rational::from_str(s) {
+                Ok(f) => Ok(Self(f64::rounding_from(f, Nearest).0)),
+                Err(_) => Err(anyhow!("{} is not an approximate fraction", s)),
+            }
         }
     }
 }
@@ -702,8 +559,8 @@ mod tests {
     use std::ops::Neg;
 
     use crate::{
-        ebi_number::{One, Signed, Zero},
-        fraction_f64::FractionF64,
+        ebi_number::{One, Signed},
+        fraction::fraction_f64::FractionF64,
     };
 
     #[test]
@@ -715,9 +572,33 @@ mod tests {
     }
 
     #[test]
-    fn fraction_exact() {
-        let zero = FractionF64::one().one_minus();
+    fn fraction_parse() {
+        let x = "0.2".to_owned();
+        let f: FractionF64 = x.parse().unwrap();
+        assert_eq!(f, FractionF64::from((1, 5)));
 
-        assert!(zero.is_zero());
+        assert_eq!("1".parse::<FractionF64>().unwrap(), FractionF64::one());
+        assert_eq!("-1".parse::<FractionF64>().unwrap(), -FractionF64::one());
+
+        assert_eq!("1.00".parse::<FractionF64>().unwrap(), FractionF64::one());
+        assert_eq!("-1.00".parse::<FractionF64>().unwrap(), -FractionF64::one());
+
+        assert_eq!(
+            "1/5".parse::<FractionF64>().unwrap(),
+            FractionF64::from((1, 5))
+        );
+        assert_eq!(
+            "-1/5".parse::<FractionF64>().unwrap(),
+            -FractionF64::from((1, 5))
+        );
+
+        assert_eq!(
+            ".2".parse::<FractionF64>().unwrap(),
+            FractionF64::from((1, 5))
+        );
+        assert_eq!(
+            "-.2".parse::<FractionF64>().unwrap(),
+            -FractionF64::from((1, 5))
+        );
     }
 }

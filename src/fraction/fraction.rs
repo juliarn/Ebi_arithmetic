@@ -17,7 +17,6 @@ pub type Fraction = super::fraction_exact::FractionExact;
 
 //======================== fraction tools ========================//
 
-pub type UInt = fraction::BigUint;
 pub const APPROX_DIGITS: u64 = 5;
 pub const EPSILON: f64 = 1e-13;
 
@@ -51,7 +50,3 @@ macro_rules! f1 {
     };
 }
 pub use f1;
-
-pub(crate) trait ToExact<T> {
-    fn to_exact(value: T) -> fraction::BigFraction;
-}
