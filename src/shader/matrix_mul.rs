@@ -12,7 +12,7 @@ pub enum MatrixMulShaderF32 {
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct Rational {
+pub struct GpuRational {
     pub num: u32,
     pub den: u32,
     pub sign: u32,
@@ -270,7 +270,12 @@ impl MatrixMulShaderExact {
         !matches!(self, MatrixMulShaderExact::NotAvailable)
     }
 
-    pub fn execute(&self, a: Vec<Rational>, b: Vec<Rational>, dims: Dimensions) -> Vec<Rational> {
+    pub fn execute(
+        &self,
+        a: Vec<GpuRational>,
+        b: Vec<GpuRational>,
+        dims: Dimensions,
+    ) -> Vec<GpuRational> {
         match self {
             MatrixMulShaderExact::NotAvailable => panic!("MatrixMulShaderExact not available"),
             MatrixMulShaderExact::Available {

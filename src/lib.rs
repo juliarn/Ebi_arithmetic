@@ -14,6 +14,7 @@ pub mod matrix {
     pub mod identity_minus;
     pub mod inversion;
     pub mod mul;
+    pub mod mul_gpu;
 }
 
 pub mod fraction {
