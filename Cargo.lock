@@ -199,7 +199,7 @@ dependencies = [
 
 [[package]]
 name = "ebi_arithmetic"
-version = "0.2.21"
+version = "0.2.22"
 dependencies = [
  "anyhow",
  "bytemuck",

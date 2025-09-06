@@ -275,7 +275,7 @@ impl TryFrom<Vec<Vec<FractionEnum>>> for FractionMatrixEnum {
                     let m: FractionMatrixExact = new_rows.try_into()?;
                     Ok(Self::Exact(m))
                 } else {
-                    let new_rows = vec![vec![]; value.len()];
+                    let new_rows: Vec<Vec<FractionF64>> = vec![vec![]; value.len()];
                     let m: FractionMatrixF64 = new_rows.try_into()?;
                     Ok(Self::Approx(m))
                 }

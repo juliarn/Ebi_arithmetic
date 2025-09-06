@@ -30,23 +30,21 @@ macro_rules! mul_mat_mat {
                     ));
                 }
 
-                let n = self.number_of_rows();
-                let m = self.number_of_columns();
-                let p = rhs.number_of_columns();
-                let mut values = vec![$v::zero(); p * n];
+                let result_rows = self.number_of_rows();
+                let result_columns = rhs.number_of_columns();
+                let mut result = vec![$v::zero(); result_rows * result_columns];
 
-                iproduct!(0..n, 0..p).for_each(|(i, j)| {
-                    for k in 0..m {
-                        let idx_ik = self.index(i, k);
-                        let idx_kj = rhs.index(k, j);
-                        values[i * n + j] += &self.values[idx_ik] * &rhs.values[idx_kj];
+                iproduct!(0..result_rows, 0..result_columns).for_each(|(row, column)| {
+                    for k in 0..self.number_of_columns() {
+                        result[row * result_columns + column] +=
+                            &self.values[row * self.number_of_columns() + k] * &rhs.values[k * rhs.number_of_columns() + column];
                     }
                 });
 
                 Ok($t {
-                    values,
-                    number_of_columns: n,
-                    number_of_rows: p,
+                    values: result,
+                    number_of_columns: result_columns,
+                    number_of_rows: result_rows,
                 })
             }
         }
@@ -238,6 +236,7 @@ mod tests {
     };
     use std::time::Instant;
 
+    use anyhow::Result;
     use rand::Rng;
     use serial_test::serial;
 
@@ -394,7 +393,7 @@ mod tests {
     }
 
     // #[test]
-    fn bench_mul() {
+    fn _bench_mul() {
         let repeat = 5;
         let size = 100_usize;
 
@@ -606,5 +605,54 @@ mod tests {
 
         assert_eq!((&m * &v2).unwrap(), answer_mv);
         assert_eq!((&v * &m).unwrap(), answer_vm);
+    }
+
+    fn convert(values: Vec<Vec<f64>>) -> Result<FractionMatrixF64> {
+        values
+            .into_iter()
+            .map(|r| r.into_iter().map(|x| FractionF64(x)).collect())
+            .collect::<Vec<Vec<FractionF64>>>()
+            .try_into()
+    }
+
+    #[test]
+    fn mul_big() {
+        let a = convert(vec![
+            vec![0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.2, 0.2, 0.0],
+            vec![0.0, 0.0, 0.0, 0.25, 0.0, 0.0, 0.0, 0.0],
+            vec![0.0, 0.0, 0.0, 0.2, 0.2, 0.0, 0.0, 0.0],
+            vec![0.0, 0.2, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0],
+            vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+        ])
+        .unwrap();
+
+        let f = convert(vec![
+            vec![1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            vec![0.0, 1.0, 0.0, 0.0, 0.0, 0.6],
+            vec![0.0, 0.44999999999999996, 1.0, 0.0, 0.75, 0.27],
+            vec![0.6, 0.0, 0.0, 1.0, 0.0, 0.0],
+            vec![0.0, 0.6, 0.0, 0.0, 1.0, 0.36],
+            vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+        ])
+        .unwrap();
+
+        let fa = convert(vec![
+            vec![0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.2, 0.2, 0.6],
+            vec![0.0, 0.15, 0.15, 0.25, 0.0, 0.09, 0.09, 0.27],
+            vec![0.0, 0.0, 0.6, 0.2, 0.2, 0.0, 0.0, 0.0],
+            vec![0.0, 0.2, 0.2, 0.0, 0.0, 0.12, 0.12, 0.36],
+            vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+        ])
+        .unwrap();
+
+        println!("f\n{}", f);
+        println!("a\n{}", a);
+
+        println!("f*a\n{}", (&f * &a).unwrap());
+        println!("f*a\n{}", fa);
+
+        assert_eq!((&f * &a).unwrap(), fa);
     }
 }
