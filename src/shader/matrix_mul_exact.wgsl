@@ -53,41 +53,45 @@ fn lcm(m: u32, n: u32) -> u32 {
 }
 
 fn mul_fraction(a: Rational, b: Rational) -> Rational {
-    let gdc_ab = gcd(a.num, b.den);
-    let gdc_ba = gcd(a.den, b.num);
-    let num = (a.num / gdc_ab) * (b.num / gdc_ba);
-    let den = (a.den / gdc_ba) * (b.den / gdc_ab);
+    let gdc_ab: u32 = gcd(a.num, b.den);
+    let gdc_ba: u32 = gcd(a.den, b.num);
+    let num: u32 = (a.num / gdc_ab) * (b.num / gdc_ba);
+    let den: u32 = (a.den / gdc_ba) * (b.den / gdc_ab);
 
-    var sign: u32 = 1u;
-    if (a.sign != b.sign) {
-        sign = 0u;
-    }
-    return Rational(num, den, sign);
+    return Rational(num, den, select(1u, 0u, a.sign != b.sign));
 }
 
 fn add_fraction(a: Rational,b: Rational) -> Rational {
-    if (a.den == b.den) {
-        return Rational(a.num + b.num, a.den, 1u);
-    }
-    let den = lcm(a.den, b.den);
-    // Calculate the numerator for a and adjust according to the sign
-    var num_a_signed: i64 = i64(a.num * (den / a.den));
-    if (a.sign == 0u) {
-        num_a_signed = -num_a_signed;
-    }
-    // Calculate the numerator for b and adjust according to the sign
-    var num_b_signed: i64 = i64(b.num * (den / b.den));
-    if (b.sign == 0u) {
-        num_b_signed = -num_b_signed;
-    }
-    // Sum the signed numerators
-    let num_signed: i64 = num_a_signed + num_b_signed;
-    // Determine sign based on sum result
-    var sign: u32 = 1u;
-    if (num_signed < 0) {
-        sign = 0u;
-    }
-    return Rational(u32(abs(num_signed)), den, sign);
+   // Handle zeros
+   if (a.num == 0u) {
+       return b;
+   }
+   if (b.num == 0u) {
+       return a;
+   }
+
+   // Scale numerators (do widening before multiply)
+   let sa: i64 = i64(select(-1, 1, a.sign == 1u));
+   let sb: i64 = i64(select(-1, 1, b.sign == 1u));
+
+   let g = gcd(a.den, b.den);
+
+   let an: i64 = sa * (i64(a.num) * i64(b.den / g));
+   let bn: i64 = sb * (i64(b.num) * i64(a.den / g));
+   let sum_i: i64 = an + bn;
+
+   if (sum_i == 0) {
+       return Rational(0u, 1u, 1u);
+   }
+
+   let sign: u32 = select(1u, 0u, sum_i < 0);
+   let num_u: u32 = u32(abs(sum_i));
+
+   // Final reduction
+   // Common denominator without full lcm
+   let den = (a.den / g) * b.den;
+   let g2 = gcd(num_u, den);
+   return Rational(num_u / g2, den / g2, sign);
 }
 
 @compute @workgroup_size(16, 16)

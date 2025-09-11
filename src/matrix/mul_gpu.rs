@@ -1,13 +1,17 @@
 use crate::fraction::signed::Numerator;
 use crate::matrix::fraction_matrix_exact::FractionMatrixExact;
 use crate::matrix::fraction_matrix_f64::FractionMatrixF64;
-use crate::shader::matrix_mul::{Dimensions, GpuRational};
+use crate::shader::matrix_mul::{Dimensions, GpuRational, GpuSignedU64};
 use crate::shader::state::COMPUTE_SHADERS;
 use crate::{EbiMatrix, One, Signed, Zero};
-use itertools::izip;
+use itertools::{izip, Itertools};
 use malachite::base::num::arithmetic::traits::{Lcm, Sign, UnsignedAbs};
 use malachite::rational::Rational;
 use malachite::{Integer, Natural};
+use rayon::iter::IntoParallelIterator;
+use rayon::iter::ParallelIterator;
+use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator};
+use std::u64;
 
 pub trait MulGpu {
     type Output;
@@ -25,26 +29,10 @@ impl MulGpu for &FractionMatrixExact {
         let m = self.number_of_columns();
         let p = rhs.number_of_columns();
 
-        let numerators = self
-            .values
-            .iter()
-            .map(|v| v.signed_numerator())
-            .collect::<Vec<_>>();
-        let numerators2 = rhs
-            .values
-            .iter()
-            .map(|v| v.signed_numerator())
-            .collect::<Vec<_>>();
-        let denominators = self
-            .values
-            .iter()
-            .map(|v| v.clone().into_denominator())
-            .collect::<Vec<_>>();
-        let denominators2 = rhs
-            .values
-            .iter()
-            .map(|v| v.clone().into_denominator())
-            .collect::<Vec<_>>();
+        let numerators = self.numerators();
+        let numerators2 = rhs.numerators();
+        let denominators = self.denominators();
+        let denominators2 = self.denominators();
 
         // Try method: Direct multiplication on the GPU, if no overflows are guaranteed.
         // TODO: The current GPU impl can only support u32, find a way to support u64
@@ -128,85 +116,80 @@ impl MulGpu for &FractionMatrixExact {
         let m = self.number_of_columns();
         let p = rhs.number_of_columns();
 
-        let numerators = self
-            .values
-            .iter()
-            .map(|v| v.signed_numerator())
-            .collect::<Vec<_>>();
-        let numerators2 = rhs
-            .values
-            .iter()
-            .map(|v| v.signed_numerator())
-            .collect::<Vec<_>>();
-        let denominators = self
-            .values
-            .iter()
-            .map(|v| v.clone().into_denominator())
-            .collect::<Vec<_>>();
-        let denominators2 = rhs
-            .values
-            .iter()
-            .map(|v| v.clone().into_denominator())
-            .collect::<Vec<_>>();
+        let row_lcms: Vec<Natural> = (0..n)
+            .into_par_iter()
+            .map(|i| {
+                (0..m).fold(Natural::one(), |acc, j| {
+                    acc.lcm(self.values[self.index(i, j)].denominator_ref())
+                })
+            })
+            .collect();
+        let col_lcms: Vec<Natural> = (0..p)
+            .into_par_iter()
+            .map(|j| {
+                (0..m).fold(Natural::one(), |acc, i| {
+                    acc.lcm(rhs.values[rhs.index(i, j)].denominator_ref())
+                })
+            })
+            .collect();
 
-        // Try method: Pulling out the LCM of the denominators and scaling everything to
-        // integer multiplication. Only perform if no overflows are guaranteed.
-        let lcm = denominators
-            .iter()
-            .fold(Natural::one(), |acc, denom| acc.lcm(denom));
-        let lcm2 = denominators2
-            .iter()
-            .fold(Natural::one(), |acc, denom| acc.lcm(denom));
-        let scaled = numerators
-            .iter()
-            .zip(denominators.iter())
-            .map(|(num, den)| num * Integer::from(&lcm / den))
-            .collect::<Vec<_>>();
-        let scaled2 = numerators2
-            .iter()
-            .zip(denominators2.iter())
-            .map(|(num, den)| num * Integer::from(&lcm2 / den))
-            .collect::<Vec<_>>();
+        let scaled: Vec<Integer> = (0..n)
+            .into_par_iter()
+            .flat_map(|i| {
+                (0..m)
+                    .map(|j| {
+                        let val = &self.values[self.index(i, j)];
+                        let factor = &row_lcms[i] / val.denominator_ref();
+                        val.signed_numerator() * Integer::from(factor)
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        let scaled2: Vec<Integer> = (0..m)
+            .into_par_iter()
+            .flat_map(|i| {
+                (0..p)
+                    .map(|j| {
+                        let val = &rhs.values[rhs.index(i, j)];
+                        let factor = &col_lcms[j] / val.denominator_ref();
+                        val.signed_numerator() * Integer::from(factor)
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect();
 
         let num_bound = scaled
             .iter()
-            .map(|v| v.unsigned_abs_ref())
+            .map(|x| x.unsigned_abs())
             .max()
-            .unwrap_or(&Natural::zero())
+            .unwrap_or(Natural::zero())
             * scaled2
                 .iter()
-                .map(|v| v.unsigned_abs_ref())
+                .map(|x| x.unsigned_abs())
                 .max()
-                .unwrap_or(&Natural::zero())
+                .unwrap_or(Natural::zero())
             * Natural::from(m);
-        let denom = &lcm * &lcm2;
 
         //println!("num_bound: {}", num_bound);
         //println!("denom:     {}", denom);
 
-        if num_bound <= Integer::from(i64::MAX) && denom <= Integer::from(i64::MAX) {
+        if num_bound <= Integer::from(u64::MAX) {
             let scaled_signed = scaled
-                .iter()
-                .map(|v| {
-                    if v.is_negative() {
-                        -(v.unsigned_abs().limbs()[0] as i64)
-                    } else {
-                        v.unsigned_abs().limbs()[0] as i64
-                    }
+                .into_par_iter()
+                .map(|v| GpuSignedU64 {
+                    value: v.clone().unsigned_abs().limbs()[0] as u64,
+                    sign: if v.is_negative() { 0 } else { 1 },
                 })
-                .collect::<Vec<i64>>();
+                .collect::<Vec<_>>();
             let scaled_signed2 = scaled2
-                .iter()
-                .map(|v| {
-                    if v.is_negative() {
-                        -(v.unsigned_abs().limbs()[0] as i64)
-                    } else {
-                        v.unsigned_abs().limbs()[0] as i64
-                    }
+                .into_par_iter()
+                .map(|v| GpuSignedU64 {
+                    value: v.clone().unsigned_abs().limbs()[0] as u64,
+                    sign: if v.is_negative() { 0 } else { 1 },
                 })
-                .collect::<Vec<i64>>();
+                .collect::<Vec<_>>();
 
-            let new_scaled = COMPUTE_SHADERS.matrix_mul_shader_u64().execute(
+            let new_scaled = COMPUTE_SHADERS.matrix_mul_shader_signed_u64().execute(
                 scaled_signed,
                 scaled_signed2,
                 Dimensions {
@@ -219,10 +202,20 @@ impl MulGpu for &FractionMatrixExact {
             Some(FractionMatrixExact {
                 number_of_columns: n,
                 number_of_rows: p,
-                values: new_scaled
-                    .iter()
-                    .map(|x| Rational::from(x.clone()) / Rational::from(&denom))
-                    .collect(),
+                values: (0..n)
+                    .into_par_iter()
+                    .flat_map(|i| {
+                        (0..p)
+                            .map(|j| {
+                                let idx = i * p + j;
+                                let val = &new_scaled[idx];
+                                Rational::from(val.value)
+                                    * Rational::from(if val.sign == 1 { -1 } else { 1 })
+                                    / (Rational::from(&row_lcms[i] * &col_lcms[j]))
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .collect::<Vec<_>>(),
             })
         } else {
             None
@@ -328,11 +321,11 @@ mod tests {
 
     #[test]
     fn bench_mul_gpu() {
-        let repeat = 3;
-        let size = 200_usize;
+        let repeat = 1;
+        let size = 500_usize;
 
         let mut rng = rand::thread_rng();
-        let sqrt = 1000_u64;
+        let sqrt = 10000_u64;
         let numerators = vec![rng.gen_range(0..sqrt); size * size];
         let denominators = vec![rng.gen_range(0..sqrt); size * size];
 
@@ -381,7 +374,8 @@ mod tests {
             let before = Instant::now();
             let _ = COMPUTE_SHADERS.matrix_mul_shader_exact();
             let _ = COMPUTE_SHADERS.matrix_mul_shader_f32();
-            let _ = COMPUTE_SHADERS.matrix_mul_shader_u64();
+            let _ = COMPUTE_SHADERS.matrix_mul_shader_signed_u64();
+            let _ = COMPUTE_SHADERS.matrix_mul_shader_i64();
             println!("init shaders:      {:.2?}", before.elapsed());
         }
 

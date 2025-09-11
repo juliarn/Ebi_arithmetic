@@ -1,17 +1,19 @@
-use anyhow::{Result, anyhow};
-use itertools::iproduct;
+use anyhow::{anyhow, Result};
 use malachite::rational::Rational;
+use rayon::iter::FromParallelIterator;
+use rayon::iter::IntoParallelIterator;
+use rayon::iter::ParallelIterator;
 use std::ops::Mul;
 
+use crate::fraction::fraction_exact::FractionExact;
+use crate::fraction::fraction_f64::FractionF64;
+use crate::matrix::fraction_matrix_f64::FractionMatrixF64;
 use crate::{
-    EbiMatrix, MaybeExact, Zero,
-    fraction::{
-        fraction_enum::FractionEnum, fraction_exact::FractionExact, fraction_f64::FractionF64,
-    },
-    matrix::{
+    fraction::fraction_enum::FractionEnum, matrix::{
         fraction_matrix_enum::FractionMatrixEnum, fraction_matrix_exact::FractionMatrixExact,
-        fraction_matrix_f64::FractionMatrixF64,
-    },
+    }, EbiMatrix,
+    MaybeExact,
+    Zero,
 };
 
 macro_rules! mul_mat_mat {
@@ -32,14 +34,30 @@ macro_rules! mul_mat_mat {
 
                 let result_rows = self.number_of_rows();
                 let result_columns = rhs.number_of_columns();
-                let mut result = vec![$v::zero(); result_rows * result_columns];
 
-                iproduct!(0..result_rows, 0..result_columns).for_each(|(row, column)| {
+                let result = (0..result_rows)
+                    .into_par_iter()
+                    .flat_map(|row| {
+                        (0..result_columns)
+                            .into_par_iter()
+                            .map(|column| {
+                                let mut sum = $v::zero();
+                                for k in 0..self.number_of_columns() {
+                                    sum += &self.values[row * self.number_of_columns() + k]
+                                        * &rhs.values[k * rhs.number_of_columns() + column];
+                                }
+                                sum
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .collect::<Vec<_>>();
+
+                /*iproduct!(0..result_rows, 0..result_columns).for_each(|(row, column)| {
                     for k in 0..self.number_of_columns() {
                         result[row * result_columns + column] +=
                             &self.values[row * self.number_of_columns() + k] * &rhs.values[k * rhs.number_of_columns() + column];
                     }
-                });
+                });*/
 
                 Ok($t {
                     values: result,
@@ -227,12 +245,11 @@ impl Mul<&FractionMatrixEnum> for &Vec<FractionEnum> {
 
 #[cfg(test)]
 mod tests {
-
     use crate::{
-        EbiMatrix, MaybeExact,
-        fraction::{fraction::Fraction, fraction_enum::FractionEnum},
-        matrix::fraction_matrix_enum::FractionMatrixEnum,
+        fraction::{fraction::Fraction, fraction_enum::FractionEnum}, matrix::fraction_matrix_enum::FractionMatrixEnum,
         set_exact_globally,
+        EbiMatrix,
+        MaybeExact,
     };
     use std::time::Instant;
 

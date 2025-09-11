@@ -1,5 +1,6 @@
-use crate::shader::matrix_mul::{MatrixMulShaderExact, MatrixMulShaderF32, MatrixMulShaderI64};
-use std::num::NonZeroU64;
+use crate::shader::matrix_mul::{
+    MatrixMulShaderExact, MatrixMulShaderF32, MatrixMulShaderI64, MatrixMulShaderSignedU64,
+};
 use std::sync::LazyLock;
 use wgpu::{BufferSize, ShaderModuleDescriptor};
 
@@ -117,7 +118,8 @@ impl GpuState {
 
 pub struct ComputeShaders {
     matrix_mul_shader_f32: MatrixMulShaderF32,
-    matrix_mul_shader_u64: MatrixMulShaderI64,
+    matrix_mul_shader_i64: MatrixMulShaderI64,
+    matrix_mul_shader_signed_u64: MatrixMulShaderSignedU64,
     matrix_mul_shader_exact: MatrixMulShaderExact,
 }
 
@@ -125,7 +127,8 @@ impl ComputeShaders {
     pub fn new(gpu_state: &'static GpuState) -> Self {
         ComputeShaders {
             matrix_mul_shader_f32: MatrixMulShaderF32::new(gpu_state),
-            matrix_mul_shader_u64: MatrixMulShaderI64::new(gpu_state),
+            matrix_mul_shader_i64: MatrixMulShaderI64::new(gpu_state),
+            matrix_mul_shader_signed_u64: MatrixMulShaderSignedU64::new(gpu_state),
             matrix_mul_shader_exact: MatrixMulShaderExact::new(gpu_state),
         }
     }
@@ -134,8 +137,12 @@ impl ComputeShaders {
         &self.matrix_mul_shader_f32
     }
 
-    pub fn matrix_mul_shader_u64(&self) -> &MatrixMulShaderI64 {
-        &self.matrix_mul_shader_u64
+    pub fn matrix_mul_shader_i64(&self) -> &MatrixMulShaderI64 {
+        &self.matrix_mul_shader_i64
+    }
+
+    pub fn matrix_mul_shader_signed_u64(&self) -> &MatrixMulShaderSignedU64 {
+        &self.matrix_mul_shader_signed_u64
     }
 
     pub fn matrix_mul_shader_exact(&self) -> &MatrixMulShaderExact {

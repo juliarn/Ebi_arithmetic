@@ -1,13 +1,15 @@
-use anyhow::{Error, Result, anyhow};
+use anyhow::{anyhow, Error, Result};
 use itertools::Itertools;
 use malachite::{
-    base::num::basic::traits::{One as MOne, Zero as MZero},
-    rational::Rational,
+    base::num::basic::traits::{One as MOne, Zero as MZero}, rational::Rational,
+    Integer,
+    Natural,
 };
 
+use crate::fraction::signed::Numerator;
 use crate::{
-    One, Signed, Zero, ebi_matrix::EbiMatrix, fraction::fraction_exact::FractionExact,
-    pop_front_columns, push_columns,
+    ebi_matrix::EbiMatrix, fraction::fraction_exact::FractionExact, pop_front_columns, push_columns, One,
+    Signed, Zero,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -20,6 +22,14 @@ pub struct FractionMatrixExact {
 impl FractionMatrixExact {
     pub(crate) fn index(&self, row: usize, column: usize) -> usize {
         row * self.number_of_columns + column
+    }
+
+    pub(crate) fn numerators(&self) -> Vec<Integer> {
+        self.values.iter().map(|v| v.signed_numerator()).collect()
+    }
+
+    pub(crate) fn denominators(&self) -> Vec<Natural> {
+        self.values.iter().map(|v| v.clone().into_denominator()).collect()
     }
 }
 

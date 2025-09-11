@@ -20,6 +20,13 @@ pub struct GpuRational {
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct GpuSignedU64 {
+    pub value: u64,
+    pub sign: u64,
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Dimensions {
     pub n: u32,
     pub m: u32,
@@ -233,6 +240,54 @@ impl MatrixMulShaderI64 {
         match self {
             MatrixMulShaderI64::NotAvailable => panic!("MatrixMulShaderI64 not available"),
             MatrixMulShaderI64::Available {
+                gpu_state,
+                bind_group_layout,
+                compute_pipeline,
+            } => shader_execute(gpu_state, bind_group_layout, compute_pipeline, a, b, dims),
+        }
+    }
+}
+
+pub enum MatrixMulShaderSignedU64 {
+    NotAvailable,
+    Available {
+        gpu_state: &'static GpuState,
+        bind_group_layout: wgpu::BindGroupLayout,
+        compute_pipeline: wgpu::ComputePipeline,
+    },
+}
+
+impl MatrixMulShaderSignedU64 {
+    pub fn new(gpu_state: &'static GpuState) -> Self {
+        if !gpu_state.is_available() {
+            return MatrixMulShaderSignedU64::NotAvailable;
+        }
+
+        let (bind_group_layout, compute_pipeline) =
+            shader_setup(gpu_state, wgpu::include_wgsl!("matrix_mul_signed_u64.wgsl"));
+
+        MatrixMulShaderSignedU64::Available {
+            gpu_state,
+            bind_group_layout,
+            compute_pipeline,
+        }
+    }
+
+    pub fn is_available(&self) -> bool {
+        !matches!(self, MatrixMulShaderSignedU64::NotAvailable)
+    }
+
+    pub fn execute(
+        &self,
+        a: Vec<GpuSignedU64>,
+        b: Vec<GpuSignedU64>,
+        dims: Dimensions,
+    ) -> Vec<GpuSignedU64> {
+        match self {
+            MatrixMulShaderSignedU64::NotAvailable => {
+                panic!("MatrixMulShaderSignedU64 not available")
+            }
+            MatrixMulShaderSignedU64::Available {
                 gpu_state,
                 bind_group_layout,
                 compute_pipeline,
