@@ -1,7 +1,7 @@
 struct Rational {
-    num: u32,
-    den: u32,
-    sign: u32,
+    num: u64,
+    den: u64,
+    sign: u64,
 };
 
 struct Dimensions {
@@ -22,15 +22,15 @@ var<uniform> dims: Dimensions;
 @group(0) @binding(3)
 var<storage, read_write> C: array<Rational>;
 
-fn gcd(a: u32, b: u32) -> u32 {
-    if (a == u32(0u) || b == u32(0u)) {
+fn gcd(a: u64, b: u64) -> u64 {
+    if (a == u64(0u) || b == u64(0u)) {
         return (a | b);
     }
 
     let shift = u32(countTrailingZeros(a | b));
 
-    var m = u32(a) >> u32(countTrailingZeros(a));
-    var n = u32(b) >> u32(countTrailingZeros(b));
+    var m = u64(a) >> u32(countTrailingZeros(a));
+    var n = u64(b) >> u32(countTrailingZeros(b));
 
     while (m != n) {
         if (m > n) {
@@ -42,56 +42,64 @@ fn gcd(a: u32, b: u32) -> u32 {
         }
     }
 
-    return u32(m << shift);
+    return u64(m << shift);
 }
 
-fn lcm(m: u32, n: u32) -> u32 {
-    if (m == u32(0u) && n == u32(0u)) {
-        return u32(0u);
+fn lcm(m: u64, n: u64) -> u64 {
+    if (m == u64(0u) && n == u64(0u)) {
+        return u64(0u);
     }
     return m * (n / gcd(m, n));
 }
 
 fn mul_fraction(a: Rational, b: Rational) -> Rational {
-    let gdc_ab: u32 = gcd(a.num, b.den);
-    let gdc_ba: u32 = gcd(a.den, b.num);
-    let num: u32 = (a.num / gdc_ab) * (b.num / gdc_ba);
-    let den: u32 = (a.den / gdc_ba) * (b.den / gdc_ab);
+    let gdc_ab: u64 = gcd(a.num, b.den);
+    let gdc_ba: u64 = gcd(a.den, b.num);
+    let num: u64 = (a.num / gdc_ab) * (b.num / gdc_ba);
+    let den: u64 = (a.den / gdc_ba) * (b.den / gdc_ab);
 
-    return Rational(num, den, select(1u, 0u, a.sign != b.sign));
+    return Rational(num, den, select(u64(1u), u64(0u), a.sign != b.sign));
 }
 
 fn add_fraction(a: Rational,b: Rational) -> Rational {
    // Handle zeros
-   if (a.num == 0u) {
+   if (a.num == u64(0u)) {
        return b;
    }
-   if (b.num == 0u) {
+   if (b.num == u64(0u)) {
        return a;
    }
 
-   // Scale numerators (do widening before multiply)
-   let sa: i64 = i64(select(-1, 1, a.sign == 1u));
-   let sb: i64 = i64(select(-1, 1, b.sign == 1u));
-
    let g = gcd(a.den, b.den);
 
-   let an: i64 = sa * (i64(a.num) * i64(b.den / g));
-   let bn: i64 = sb * (i64(b.num) * i64(a.den / g));
-   let sum_i: i64 = an + bn;
+   let an: u64 = a.num * (b.den / g);
+   let bn: u64 = b.num * (a.den / g);
 
-   if (sum_i == 0) {
-       return Rational(0u, 1u, 1u);
+   var num: u64;
+   var sign: u64;
+   if (a.sign == b.sign) {
+       // Same sign, add the values
+       num = an + bn;
+       sign = a.sign;
+   } else {
+       // Different signs, subtract the smaller from the larger
+       if (an > bn) {
+           num = an - bn;
+           sign = a.sign;
+       } else if (bn > an) {
+           num = bn - an;
+           sign = b.sign;
+       } else {
+           // They are equal, result is zero
+           return Rational(u64(0u), u64(1u), u64(1u));
+       }
    }
-
-   let sign: u32 = select(1u, 0u, sum_i < 0);
-   let num_u: u32 = u32(abs(sum_i));
 
    // Final reduction
    // Common denominator without full lcm
    let den = (a.den / g) * b.den;
-   let g2 = gcd(num_u, den);
-   return Rational(num_u / g2, den / g2, sign);
+   let g2 = gcd(num, den);
+   return Rational(num / g2, den / g2, sign);
 }
 
 @compute @workgroup_size(16, 16)
@@ -109,7 +117,7 @@ fn mul(@builtin(global_invocation_id) id: vec3<u32>) {
         return; // Out of bounds
     }
 
-    var rational = Rational(0u, 1u, 1u);
+    var rational = Rational(u64(0u), u64(1u), u64(1u));
     for (var k = 0u; k < m; k++) {
         let mul = mul_fraction(A[row * m + k], B[k * p + col]);
         if (k == 0u) {

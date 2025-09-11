@@ -4,7 +4,7 @@ use crate::matrix::fraction_matrix_f64::FractionMatrixF64;
 use crate::shader::matrix_mul::{Dimensions, GpuRational, GpuSignedU64};
 use crate::shader::state::COMPUTE_SHADERS;
 use crate::{EbiMatrix, One, Signed, Zero};
-use itertools::{izip, Itertools};
+use itertools::{Itertools, izip};
 use malachite::base::num::arithmetic::traits::{Lcm, Sign, UnsignedAbs};
 use malachite::rational::Rational;
 use malachite::{Integer, Natural};
@@ -53,19 +53,19 @@ impl MulGpu for &FractionMatrixExact {
         //println!("num_bound: {}", num_bound);
         //println!("den_bound: {}", den_bound);
 
-        if num_bound <= Natural::from(u32::MAX) && den_bound <= Natural::from(u32::MAX) {
+        if num_bound <= Natural::from(u64::MAX) && den_bound <= Natural::from(u64::MAX) {
             let rationals = izip!(numerators.iter(), denominators.iter())
                 .map(|(n, d)| GpuRational {
                     sign: if n.is_negative() { 0 } else { 1 },
-                    num: n.unsigned_abs().limbs()[0] as u32,
-                    den: d.limbs()[0] as u32,
+                    num: n.unsigned_abs().limbs()[0] as u64,
+                    den: d.limbs()[0] as u64,
                 })
                 .collect::<Vec<GpuRational>>();
             let rationals2 = izip!(numerators2.iter(), denominators2.iter())
                 .map(|(n, d)| GpuRational {
                     sign: if n.is_negative() { 0 } else { 1 },
-                    num: n.unsigned_abs().limbs()[0] as u32,
-                    den: d.limbs()[0] as u32,
+                    num: n.unsigned_abs().limbs()[0] as u64,
+                    den: d.limbs()[0] as u64,
                 })
                 .collect::<Vec<GpuRational>>();
 
@@ -235,14 +235,12 @@ impl MulGpu for &FractionMatrixF64 {
         let values = COMPUTE_SHADERS
             .matrix_mul_shader_f32()
             .execute(
-                self.values
-                    .iter()
-                    .map(|val| *val as f32)
-                    .collect::<Vec<f32>>(),
-                rhs.values
-                    .iter()
-                    .map(|val| *val as f32)
-                    .collect::<Vec<f32>>(),
+                self.values.clone(), /*.iter()
+                                     .map(|val| *val as f32)
+                                     .collect::<Vec<f32>>()*/
+                rhs.values.clone(), /*.iter()
+                                    .map(|val| *val as f32)
+                                    .collect::<Vec<f32>>()*/
                 Dimensions {
                     n: n as u32,
                     m: m as u32,
@@ -267,6 +265,7 @@ impl MulGpu for &FractionMatrixF64 {
 
 #[cfg(test)]
 mod tests {
+    use crate::EbiMatrix;
     use crate::exact::MaybeExact;
     use crate::fraction::fraction_exact::FractionExact;
     use crate::fraction::fraction_f64::FractionF64;
@@ -274,7 +273,6 @@ mod tests {
     use crate::matrix::fraction_matrix_f64::FractionMatrixF64;
     use crate::matrix::mul_gpu::MulGpu;
     use crate::shader::state::COMPUTE_SHADERS;
-    use crate::EbiMatrix;
     use itertools::izip;
     use rand::Rng;
     use std::time::Instant;
@@ -397,7 +395,7 @@ mod tests {
         }
 
         // exact u64 gpu
-        /*{
+        {
             let before = Instant::now();
             for (m, res) in izip!(matrices_exact.iter(), matrices_exact_results.iter()) {
                 let m3 = m.mul_gpu(m).unwrap();
@@ -409,7 +407,7 @@ mod tests {
             }
 
             println!("exact u64 gpu:     {:.2?}", before.elapsed());
-        }*/
+        }
 
         // exact u64 gpu transformed
         {

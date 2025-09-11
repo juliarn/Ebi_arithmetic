@@ -41,7 +41,9 @@ impl GpuState {
 
         pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             label: None,
-            required_features: wgpu::Features::SHADER_INT64,
+            required_features: wgpu::Features::SHADER_INT64
+                | wgpu::Features::SHADER_INT64_ATOMIC_ALL_OPS
+                | wgpu::Features::SHADER_F64,
             required_limits: wgpu::Limits::default(),
             memory_hints: wgpu::MemoryHints::MemoryUsage,
             trace: wgpu::Trace::Off,
