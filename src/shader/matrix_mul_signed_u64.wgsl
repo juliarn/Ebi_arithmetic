@@ -59,7 +59,7 @@ fn mul(@builtin(global_invocation_id) id: vec3<u32>) {
         return; // Out of bounds
     }
 
-    var sum: SignedU64 = SignedU64(u64(0u), u64(1u)); // Initialize sum to zerok
+    var sum: SignedU64 = SignedU64(u64(0u), u64(1u)); // Initialize sum to zero
     for (var k = 0u; k < m; k++) {
         let product = multiply_signed_u64(A[row * m + k], B[k * p + col]);
         sum = add_signed_u64(sum, product);

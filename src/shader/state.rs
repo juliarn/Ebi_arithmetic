@@ -1,6 +1,4 @@
-use crate::shader::matrix_mul::{
-    MatrixMulShaderExact, MatrixMulShaderF32, MatrixMulShaderI64, MatrixMulShaderSignedU64,
-};
+use crate::shader::matrix_mul::{GpuRationalU32, GpuRationalU64, GpuSignedU64, MatrixMulShader};
 use std::sync::LazyLock;
 use wgpu::{BufferSize, ShaderModuleDescriptor};
 
@@ -41,15 +39,16 @@ impl GpuState {
 
         pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             label: None,
-            required_features: wgpu::Features::SHADER_INT64
-                | wgpu::Features::SHADER_INT64_ATOMIC_ALL_OPS
-                | wgpu::Features::SHADER_F64,
+            required_features: adapter.features(),
             required_limits: wgpu::Limits::default(),
             memory_hints: wgpu::MemoryHints::MemoryUsage,
             trace: wgpu::Trace::Off,
         }))
         .map_or_else(
-            |_| GpuState::NotAvailable,
+            |err| {
+                eprintln!("Failed to create GPU device: {}", err);
+                GpuState::NotAvailable
+            },
             |(device, queue)| GpuState::Available { device, queue },
         )
     }
@@ -119,35 +118,72 @@ impl GpuState {
 }
 
 pub struct ComputeShaders {
-    matrix_mul_shader_f32: MatrixMulShaderF32,
-    matrix_mul_shader_i64: MatrixMulShaderI64,
-    matrix_mul_shader_signed_u64: MatrixMulShaderSignedU64,
-    matrix_mul_shader_exact: MatrixMulShaderExact,
+    matrix_mul_shader_f32: MatrixMulShader<f32>,
+    matrix_mul_shader_f64: MatrixMulShader<f64>,
+    matrix_mul_shader_signed_u64: MatrixMulShader<GpuSignedU64>,
+    matrix_mul_shader_exact_u32: MatrixMulShader<GpuRationalU32>,
+    matrix_mul_shader_exact_u64: MatrixMulShader<GpuRationalU64>,
 }
 
 impl ComputeShaders {
     pub fn new(gpu_state: &'static GpuState) -> Self {
+        if (!gpu_state.is_available()) {
+            return ComputeShaders {
+                matrix_mul_shader_f32: MatrixMulShader::NotAvailable,
+                matrix_mul_shader_f64: MatrixMulShader::NotAvailable,
+                matrix_mul_shader_signed_u64: MatrixMulShader::NotAvailable,
+                matrix_mul_shader_exact_u32: MatrixMulShader::NotAvailable,
+                matrix_mul_shader_exact_u64: MatrixMulShader::NotAvailable,
+            };
+        }
+
+        let device = gpu_state.get_device();
         ComputeShaders {
-            matrix_mul_shader_f32: MatrixMulShaderF32::new(gpu_state),
-            matrix_mul_shader_i64: MatrixMulShaderI64::new(gpu_state),
-            matrix_mul_shader_signed_u64: MatrixMulShaderSignedU64::new(gpu_state),
-            matrix_mul_shader_exact: MatrixMulShaderExact::new(gpu_state),
+            matrix_mul_shader_f32: MatrixMulShader::new(
+                gpu_state,
+                wgpu::include_wgsl!("matrix_mul_f32.wgsl"),
+            ),
+            matrix_mul_shader_f64: if device.features().contains(wgpu::Features::SHADER_F64) {
+                MatrixMulShader::new(gpu_state, wgpu::include_wgsl!("matrix_mul_f64.wgsl"))
+            } else {
+                MatrixMulShader::NotAvailable
+            },
+            matrix_mul_shader_signed_u64: if device
+                .features()
+                .contains(wgpu::Features::SHADER_INT64)
+            {
+                MatrixMulShader::new(gpu_state, wgpu::include_wgsl!("matrix_mul_signed_u64.wgsl"))
+            } else {
+                MatrixMulShader::NotAvailable
+            },
+            matrix_mul_shader_exact_u32: MatrixMulShader::new(
+                gpu_state,
+                wgpu::include_wgsl!("matrix_mul_exact_u32.wgsl"),
+            ),
+            matrix_mul_shader_exact_u64: if device
+                .features()
+                .contains(wgpu::Features::SHADER_INT64_ATOMIC_ALL_OPS)
+            {
+                MatrixMulShader::new(gpu_state, wgpu::include_wgsl!("matrix_mul_exact_u64.wgsl"))
+            } else {
+                MatrixMulShader::NotAvailable
+            },
         }
     }
 
-    pub fn matrix_mul_shader_f32(&self) -> &MatrixMulShaderF32 {
+    pub fn get_matrix_mul_shader_f32(&self) -> &MatrixMulShader<f32> {
         &self.matrix_mul_shader_f32
     }
-
-    pub fn matrix_mul_shader_i64(&self) -> &MatrixMulShaderI64 {
-        &self.matrix_mul_shader_i64
+    pub fn get_matrix_mul_shader_f64(&self) -> &MatrixMulShader<f64> {
+        &self.matrix_mul_shader_f64
     }
-
-    pub fn matrix_mul_shader_signed_u64(&self) -> &MatrixMulShaderSignedU64 {
+    pub fn get_matrix_mul_shader_signed_u64(&self) -> &MatrixMulShader<GpuSignedU64> {
         &self.matrix_mul_shader_signed_u64
     }
-
-    pub fn matrix_mul_shader_exact(&self) -> &MatrixMulShaderExact {
-        &self.matrix_mul_shader_exact
+    pub fn get_matrix_mul_shader_exact_u32(&self) -> &MatrixMulShader<GpuRationalU32> {
+        &self.matrix_mul_shader_exact_u32
+    }
+    pub fn get_matrix_mul_shader_exact_u64(&self) -> &MatrixMulShader<GpuRationalU64> {
+        &self.matrix_mul_shader_exact_u64
     }
 }

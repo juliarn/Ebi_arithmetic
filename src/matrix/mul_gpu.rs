@@ -1,17 +1,17 @@
 use crate::fraction::signed::Numerator;
 use crate::matrix::fraction_matrix_exact::FractionMatrixExact;
 use crate::matrix::fraction_matrix_f64::FractionMatrixF64;
-use crate::shader::matrix_mul::{Dimensions, GpuRational, GpuSignedU64};
+use crate::shader::matrix_mul::{Dimensions, GpuRationalU32, GpuRationalU64, GpuSignedU64};
 use crate::shader::state::COMPUTE_SHADERS;
 use crate::{EbiMatrix, One, Signed, Zero};
-use itertools::{Itertools, izip};
+use itertools::izip;
+use itertools::Itertools;
 use malachite::base::num::arithmetic::traits::{Lcm, Sign, UnsignedAbs};
 use malachite::rational::Rational;
 use malachite::{Integer, Natural};
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator};
-use std::u64;
 
 pub trait MulGpu {
     type Output;
@@ -25,6 +25,16 @@ impl MulGpu for &FractionMatrixExact {
     type Output = Option<FractionMatrixExact>;
 
     fn mul_gpu(self, rhs: Self) -> Self::Output {
+        if !COMPUTE_SHADERS
+            .get_matrix_mul_shader_exact_u32()
+            .is_available()
+            && !COMPUTE_SHADERS
+                .get_matrix_mul_shader_exact_u64()
+                .is_available()
+        {
+            return None;
+        }
+
         let n = self.number_of_rows();
         let m = self.number_of_columns();
         let p = rhs.number_of_columns();
@@ -50,68 +60,70 @@ impl MulGpu for &FractionMatrixExact {
         let den_bound = denominators.iter().min().unwrap_or(&Natural::zero())
             * denominators2.iter().min().unwrap_or(&Natural::one());
 
-        //println!("num_bound: {}", num_bound);
-        //println!("den_bound: {}", den_bound);
+        macro_rules! shader_exact {
+            ($v:ident, $u:ident, $name:tt) => {
+                if num_bound <= Natural::from($v::MAX) && den_bound <= Natural::from($v::MAX) {
+                    let rationals = izip!(numerators.iter(), denominators.iter())
+                        .map(|(n, d)| $u {
+                            sign: if n.is_negative() { 0 } else { 1 },
+                            num: n.unsigned_abs().limbs()[0] as $v,
+                            den: d.limbs()[0] as $v,
+                        })
+                        .collect::<Vec<_>>();
+                    let rationals2 = izip!(numerators2.iter(), denominators2.iter())
+                        .map(|(n, d)| $u {
+                            sign: if n.is_negative() { 0 } else { 1 },
+                            num: n.unsigned_abs().limbs()[0] as $v,
+                            den: d.limbs()[0] as $v,
+                        })
+                        .collect::<Vec<_>>();
 
-        if num_bound <= Natural::from(u64::MAX) && den_bound <= Natural::from(u64::MAX) {
-            let rationals = izip!(numerators.iter(), denominators.iter())
-                .map(|(n, d)| GpuRational {
-                    sign: if n.is_negative() { 0 } else { 1 },
-                    num: n.unsigned_abs().limbs()[0] as u64,
-                    den: d.limbs()[0] as u64,
-                })
-                .collect::<Vec<GpuRational>>();
-            let rationals2 = izip!(numerators2.iter(), denominators2.iter())
-                .map(|(n, d)| GpuRational {
-                    sign: if n.is_negative() { 0 } else { 1 },
-                    num: n.unsigned_abs().limbs()[0] as u64,
-                    den: d.limbs()[0] as u64,
-                })
-                .collect::<Vec<GpuRational>>();
+                    let new = COMPUTE_SHADERS.$name().execute(
+                        rationals,
+                        rationals2,
+                        Dimensions {
+                            n: n as u32,
+                            m: m as u32,
+                            p: p as u32,
+                        },
+                    );
 
-            /*for r in &rationals {
-                println!("r: {:#?}", r);
-            }
-            println!("========");
-            for r in &rationals2 {
-                println!("r2: {:#?}", r);
-            }*/
-
-            let new = COMPUTE_SHADERS.matrix_mul_shader_exact().execute(
-                rationals,
-                rationals2,
-                Dimensions {
-                    n: n as u32,
-                    m: m as u32,
-                    p: p as u32,
-                },
-            );
-
-            /*println!("Result:");
-            for r in &new {
-                println!("new: {:#?}", r);
-            }*/
-
-            Some(FractionMatrixExact {
-                number_of_columns: n,
-                number_of_rows: p,
-                values: new
-                    .iter()
-                    .map(|x| {
-                        (if x.sign == 1 {
-                            Rational::from(x.num)
-                        } else {
-                            Rational::from(-(x.num as i32))
-                        }) / Rational::from(x.den)
+                    Some(FractionMatrixExact {
+                        number_of_columns: n,
+                        number_of_rows: p,
+                        values: new
+                            .iter()
+                            .map(|x| {
+                                Rational::from(if x.sign == 1 { 1 } else { -1 })
+                                    * Rational::from(x.num)
+                                    / Rational::from(x.den)
+                            })
+                            .collect::<Vec<_>>(),
                     })
-                    .collect::<Vec<_>>(),
-            })
+                } else {
+                    None
+                }
+            };
+        }
+
+        if COMPUTE_SHADERS
+            .get_matrix_mul_shader_exact_u64()
+            .is_available()
+        {
+            shader_exact!(u64, GpuRationalU64, get_matrix_mul_shader_exact_u64)
         } else {
-            None
+            shader_exact!(u32, GpuRationalU32, get_matrix_mul_shader_exact_u32)
         }
     }
 
     fn mul_gpu_transformed(self, rhs: Self) -> Self::Output {
+        if !COMPUTE_SHADERS
+            .get_matrix_mul_shader_signed_u64()
+            .is_available()
+        {
+            return None;
+        }
+
         let n = self.number_of_rows();
         let m = self.number_of_columns();
         let p = rhs.number_of_columns();
@@ -170,9 +182,6 @@ impl MulGpu for &FractionMatrixExact {
                 .unwrap_or(Natural::zero())
             * Natural::from(m);
 
-        //println!("num_bound: {}", num_bound);
-        //println!("denom:     {}", denom);
-
         if num_bound <= Integer::from(u64::MAX) {
             let scaled_signed = scaled
                 .into_par_iter()
@@ -189,7 +198,7 @@ impl MulGpu for &FractionMatrixExact {
                 })
                 .collect::<Vec<_>>();
 
-            let new_scaled = COMPUTE_SHADERS.matrix_mul_shader_signed_u64().execute(
+            let new_scaled = COMPUTE_SHADERS.get_matrix_mul_shader_signed_u64().execute(
                 scaled_signed,
                 scaled_signed2,
                 Dimensions {
@@ -227,29 +236,49 @@ impl MulGpu for &FractionMatrixF64 {
     type Output = Option<FractionMatrixF64>;
 
     fn mul_gpu(self, rhs: Self) -> Self::Output {
+        if !COMPUTE_SHADERS.get_matrix_mul_shader_f32().is_available()
+            && !COMPUTE_SHADERS.get_matrix_mul_shader_f64().is_available()
+        {
+            return None;
+        }
+
         let n = self.number_of_rows();
         let m = self.number_of_columns();
         let p = rhs.number_of_columns();
 
-        // TODO: Only works with f32, so less precision. How to find out that less precision is sufficient?
-        let values = COMPUTE_SHADERS
-            .matrix_mul_shader_f32()
-            .execute(
-                self.values.clone(), /*.iter()
-                                     .map(|val| *val as f32)
-                                     .collect::<Vec<f32>>()*/
-                rhs.values.clone(), /*.iter()
-                                    .map(|val| *val as f32)
-                                    .collect::<Vec<f32>>()*/
+        let values = if COMPUTE_SHADERS.get_matrix_mul_shader_f64().is_available() {
+            COMPUTE_SHADERS.get_matrix_mul_shader_f64().execute(
+                self.values.clone(),
+                rhs.values.clone(),
                 Dimensions {
                     n: n as u32,
                     m: m as u32,
                     p: p as u32,
                 },
             )
-            .iter()
-            .map(|val| *val as f64)
-            .collect::<Vec<f64>>();
+        } else {
+            // TODO: Only works with f32, so less precision. How to find out that less precision is sufficient?
+            COMPUTE_SHADERS
+                .get_matrix_mul_shader_f32()
+                .execute(
+                    self.values
+                        .iter()
+                        .map(|val| *val as f32)
+                        .collect::<Vec<f32>>(),
+                    rhs.values
+                        .iter()
+                        .map(|val| *val as f32)
+                        .collect::<Vec<f32>>(),
+                    Dimensions {
+                        n: n as u32,
+                        m: m as u32,
+                        p: p as u32,
+                    },
+                )
+                .iter()
+                .map(|val| *val as f64)
+                .collect::<Vec<f64>>()
+        };
 
         Some(FractionMatrixF64 {
             values,
@@ -265,7 +294,6 @@ impl MulGpu for &FractionMatrixF64 {
 
 #[cfg(test)]
 mod tests {
-    use crate::EbiMatrix;
     use crate::exact::MaybeExact;
     use crate::fraction::fraction_exact::FractionExact;
     use crate::fraction::fraction_f64::FractionF64;
@@ -273,6 +301,7 @@ mod tests {
     use crate::matrix::fraction_matrix_f64::FractionMatrixF64;
     use crate::matrix::mul_gpu::MulGpu;
     use crate::shader::state::COMPUTE_SHADERS;
+    use crate::EbiMatrix;
     use itertools::izip;
     use rand::Rng;
     use std::time::Instant;
@@ -370,10 +399,7 @@ mod tests {
         // Init shaders
         {
             let before = Instant::now();
-            let _ = COMPUTE_SHADERS.matrix_mul_shader_exact();
-            let _ = COMPUTE_SHADERS.matrix_mul_shader_f32();
-            let _ = COMPUTE_SHADERS.matrix_mul_shader_signed_u64();
-            let _ = COMPUTE_SHADERS.matrix_mul_shader_i64();
+            let _ = COMPUTE_SHADERS.get_matrix_mul_shader_f32();
             println!("init shaders:      {:.2?}", before.elapsed());
         }
 
@@ -395,7 +421,7 @@ mod tests {
         }
 
         // exact u64 gpu
-        {
+        /*{
             let before = Instant::now();
             for (m, res) in izip!(matrices_exact.iter(), matrices_exact_results.iter()) {
                 let m3 = m.mul_gpu(m).unwrap();
@@ -407,7 +433,7 @@ mod tests {
             }
 
             println!("exact u64 gpu:     {:.2?}", before.elapsed());
-        }
+        }*/
 
         // exact u64 gpu transformed
         {
