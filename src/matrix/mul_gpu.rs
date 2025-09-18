@@ -92,16 +92,15 @@ impl MulGpu for &FractionMatrixExact {
                 },
             );
 
-            let mut values = vec![Rational::zero(); n * p];
-            for val in &new {
+            let mut values = vec![Rational::zero(); new.len()];
+            for (idx, val) in new.iter().enumerate() {
                 if val.den == 0 {
                     // Overflow
                     return None;
                 }
-                values.push(
-                    Rational::from(if val.sign == 1 { 1 } else { -1 }) * Rational::from(val.num)
-                        / Rational::from(val.den),
-                );
+                values[idx] = Rational::from(if val.sign == 1 { 1 } else { -1 })
+                    * Rational::from(val.num)
+                    / Rational::from(val.den);
             }
 
             Some(FractionMatrixExact {
@@ -135,7 +134,7 @@ impl MulGpu for &FractionMatrixExact {
                 },
             );
 
-            let mut values = vec![Rational::zero(); n * p];
+            let mut values = vec![Rational::zero(); new.len()];
             for (idx, val) in new.iter().enumerate() {
                 if val.den == 0 {
                     // Overflow
@@ -387,12 +386,12 @@ mod tests {
     #[test]
     fn bench_mul_gpu() {
         let repeat = 1;
-        let size = 2000_usize;
+        let size = 1000_usize;
 
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let sqrt = 100_u64;
-        let numerators = vec![rng.gen_range(0..sqrt); size * size];
-        let denominators = vec![rng.gen_range(0..sqrt); size * size];
+        let numerators = vec![rng.random_range(0..sqrt); size * size];
+        let denominators = vec![rng.random_range(0..sqrt); size * size];
 
         let matrices_f64: Vec<FractionMatrixF64> = (0..repeat)
             .into_iter()

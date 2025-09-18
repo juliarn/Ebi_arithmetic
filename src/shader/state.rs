@@ -127,7 +127,7 @@ pub struct ComputeShaders {
 
 impl ComputeShaders {
     pub fn new(gpu_state: &'static GpuState) -> Self {
-        if (!gpu_state.is_available()) {
+        if !gpu_state.is_available() {
             return ComputeShaders {
                 matrix_mul_shader_f32: MatrixMulShader::NotAvailable,
                 matrix_mul_shader_f64: MatrixMulShader::NotAvailable,

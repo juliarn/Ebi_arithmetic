@@ -52,12 +52,12 @@ fn gcd(a: u64, b: u64) -> u64 {
     return u64(m << shift);
 }
 
-fn add_with_overflow(a: u64, b: u64) -> U32Overflow {
+fn add_with_overflow(a: u64, b: u64) -> U64Overflow {
     let r = a + b;
     return U64Overflow(r, r < a);
 }
 
-fn mul_with_overflow(a: u64, b: u64) -> U32Overflow {
+fn mul_with_overflow(a: u64, b: u64) -> U64Overflow {
     let r = a * b;
     return U64Overflow(r, (b != u64(0u)) && (r / b != a));
 }

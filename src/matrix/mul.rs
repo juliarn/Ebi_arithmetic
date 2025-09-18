@@ -1,6 +1,5 @@
 use anyhow::{anyhow, Result};
 use malachite::rational::Rational;
-use rayon::iter::FromParallelIterator;
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
 use std::ops::Mul;
