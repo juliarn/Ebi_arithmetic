@@ -5,13 +5,12 @@ use crate::shader::matrix_mul::{Dimensions, GpuRationalU32, GpuRationalU64, GpuS
 use crate::shader::state::COMPUTE_SHADERS;
 use crate::{EbiMatrix, One, Signed, Zero};
 use itertools::izip;
-use itertools::Itertools;
-use malachite::base::num::arithmetic::traits::{Lcm, Sign, UnsignedAbs};
+use malachite::base::num::arithmetic::traits::Lcm;
+use malachite::base::num::arithmetic::traits::UnsignedAbs;
 use malachite::rational::Rational;
 use malachite::{Integer, Natural};
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
-use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator};
 
 pub trait MulGpu {
     type Output;
@@ -44,75 +43,114 @@ impl MulGpu for &FractionMatrixExact {
         let denominators = self.denominators();
         let denominators2 = self.denominators();
 
-        // Try method: Direct multiplication on the GPU, if no overflows are guaranteed.
-        // TODO: The current GPU impl can only support u32, find a way to support u64
-        let num_bound = numerators
+        let u64support = COMPUTE_SHADERS
+            .get_matrix_mul_shader_exact_u64()
+            .is_available();
+        let bound = if u64support {
+            Natural::from(u64::MAX)
+        } else {
+            Natural::from(u32::MAX)
+        };
+
+        if numerators
             .iter()
-            .map(|val| val.unsigned_abs())
-            .max()
-            .unwrap_or(Natural::zero())
-            * numerators2
+            .chain(numerators2.iter())
+            .any(|i| i > &bound)
+            || denominators
                 .iter()
-                .map(|val| val.unsigned_abs())
-                .max()
-                .unwrap_or(Natural::zero())
-            * Natural::from(m);
-        let den_bound = denominators.iter().min().unwrap_or(&Natural::zero())
-            * denominators2.iter().min().unwrap_or(&Natural::one());
-
-        macro_rules! shader_exact {
-            ($v:ident, $u:ident, $name:tt) => {
-                if num_bound <= Natural::from($v::MAX) && den_bound <= Natural::from($v::MAX) {
-                    let rationals = izip!(numerators.iter(), denominators.iter())
-                        .map(|(n, d)| $u {
-                            sign: if n.is_negative() { 0 } else { 1 },
-                            num: n.unsigned_abs().limbs()[0] as $v,
-                            den: d.limbs()[0] as $v,
-                        })
-                        .collect::<Vec<_>>();
-                    let rationals2 = izip!(numerators2.iter(), denominators2.iter())
-                        .map(|(n, d)| $u {
-                            sign: if n.is_negative() { 0 } else { 1 },
-                            num: n.unsigned_abs().limbs()[0] as $v,
-                            den: d.limbs()[0] as $v,
-                        })
-                        .collect::<Vec<_>>();
-
-                    let new = COMPUTE_SHADERS.$name().execute(
-                        rationals,
-                        rationals2,
-                        Dimensions {
-                            n: n as u32,
-                            m: m as u32,
-                            p: p as u32,
-                        },
-                    );
-
-                    Some(FractionMatrixExact {
-                        number_of_columns: n,
-                        number_of_rows: p,
-                        values: new
-                            .iter()
-                            .map(|x| {
-                                Rational::from(if x.sign == 1 { 1 } else { -1 })
-                                    * Rational::from(x.num)
-                                    / Rational::from(x.den)
-                            })
-                            .collect::<Vec<_>>(),
-                    })
-                } else {
-                    None
-                }
-            };
+                .chain(denominators2.iter())
+                .any(|n| n > &bound)
+        {
+            // Matrix entries do not fit into supported type
+            return None;
         }
 
-        if COMPUTE_SHADERS
-            .get_matrix_mul_shader_exact_u64()
-            .is_available()
-        {
-            shader_exact!(u64, GpuRationalU64, get_matrix_mul_shader_exact_u64)
+        // Try method: Direct multiplication on the GPU, if no overflows are guaranteed.
+        if u64support {
+            let rationals = izip!(numerators.iter(), denominators.iter())
+                .map(|(n, d)| GpuRationalU64 {
+                    sign: if n.is_negative() { 0 } else { 1 },
+                    num: n.unsigned_abs().limbs()[0] as u64,
+                    den: d.limbs()[0] as u64,
+                })
+                .collect::<Vec<_>>();
+            let rationals2 = izip!(numerators2.iter(), denominators2.iter())
+                .map(|(n, d)| GpuRationalU64 {
+                    sign: if n.is_negative() { 0 } else { 1 },
+                    num: n.unsigned_abs().limbs()[0] as u64,
+                    den: d.limbs()[0] as u64,
+                })
+                .collect::<Vec<_>>();
+
+            let new = COMPUTE_SHADERS.get_matrix_mul_shader_exact_u64().execute(
+                rationals,
+                rationals2,
+                Dimensions {
+                    n: n as u32,
+                    m: m as u32,
+                    p: p as u32,
+                },
+            );
+
+            let mut values = vec![Rational::zero(); n * p];
+            for val in &new {
+                if val.den == 0 {
+                    // Overflow
+                    return None;
+                }
+                values.push(
+                    Rational::from(if val.sign == 1 { 1 } else { -1 }) * Rational::from(val.num)
+                        / Rational::from(val.den),
+                );
+            }
+
+            Some(FractionMatrixExact {
+                number_of_columns: n,
+                number_of_rows: p,
+                values,
+            })
         } else {
-            shader_exact!(u32, GpuRationalU32, get_matrix_mul_shader_exact_u32)
+            let rationals = izip!(numerators.iter(), denominators.iter())
+                .map(|(n, d)| GpuRationalU32 {
+                    sign: if n.is_negative() { 0 } else { 1 },
+                    num: n.unsigned_abs().limbs()[0] as u32,
+                    den: d.limbs()[0] as u32,
+                })
+                .collect::<Vec<_>>();
+            let rationals2 = izip!(numerators2.iter(), denominators2.iter())
+                .map(|(n, d)| GpuRationalU32 {
+                    sign: if n.is_negative() { 0 } else { 1 },
+                    num: n.unsigned_abs().limbs()[0] as u32,
+                    den: d.limbs()[0] as u32,
+                })
+                .collect::<Vec<_>>();
+
+            let new = COMPUTE_SHADERS.get_matrix_mul_shader_exact_u32().execute(
+                rationals,
+                rationals2,
+                Dimensions {
+                    n: n as u32,
+                    m: m as u32,
+                    p: p as u32,
+                },
+            );
+
+            let mut values = vec![Rational::zero(); n * p];
+            for (idx, val) in new.iter().enumerate() {
+                if val.den == 0 {
+                    // Overflow
+                    return None;
+                }
+                values[idx] = Rational::from(if val.sign == 1 { 1 } else { -1 })
+                    * Rational::from(val.num)
+                    / Rational::from(val.den);
+            }
+
+            Some(FractionMatrixExact {
+                number_of_columns: n,
+                number_of_rows: p,
+                values,
+            })
         }
     }
 
@@ -349,10 +387,10 @@ mod tests {
     #[test]
     fn bench_mul_gpu() {
         let repeat = 1;
-        let size = 500_usize;
+        let size = 2000_usize;
 
         let mut rng = rand::thread_rng();
-        let sqrt = 10000_u64;
+        let sqrt = 100_u64;
         let numerators = vec![rng.gen_range(0..sqrt); size * size];
         let denominators = vec![rng.gen_range(0..sqrt); size * size];
 
@@ -420,37 +458,56 @@ mod tests {
             println!("exact u64 cpu:     {:.2?}", before.elapsed());
         }
 
-        // exact u64 gpu
-        /*{
-            let before = Instant::now();
-            for (m, res) in izip!(matrices_exact.iter(), matrices_exact_results.iter()) {
-                let m3 = m.mul_gpu(m).unwrap();
-
-                if !m3.is_exact() {
-                    panic!()
-                }
-                assert_eq!(res.clone().to_vec(), m3.to_vec());
-            }
-
-            println!("exact u64 gpu:     {:.2?}", before.elapsed());
-        }*/
-
-        // exact u64 gpu transformed
+        // exact gpu
         {
+            let mut overflow = false;
             let before = Instant::now();
-            for (m, res) in izip!(matrices_exact.iter(), matrices_exact_results.iter()) {
-                let m3 = m.mul_gpu_transformed(m).unwrap();
+            for (m, expected) in izip!(matrices_exact.iter(), matrices_exact_results.iter()) {
+                let res = m.mul_gpu(m);
 
-                if !m3.is_exact() {
-                    panic!()
+                if let Some(m3) = res {
+                    if !m3.is_exact() {
+                        panic!()
+                    }
+                    assert_eq!(expected.clone().to_vec(), m3.to_vec());
+                } else {
+                    overflow = true;
+                    break;
                 }
-                assert_eq!(res.clone().to_vec(), m3.to_vec());
             }
 
-            println!("exact u64 gpu transformed:     {:.2?}", before.elapsed());
+            if overflow {
+                println!("exact u32/u64 gpu:     overflow");
+            } else {
+                println!("exact u32/u64 gpu:     {:.2?}", before.elapsed());
+            }
         }
 
-        // f64 gpu
+        // exact signed u64 gpu
+        {
+            let mut overflow = false;
+            let before = Instant::now();
+            for (m, expected) in izip!(matrices_exact.iter(), matrices_exact_results.iter()) {
+                let res = m.mul_gpu_transformed(m);
+
+                if let Some(m3) = res {
+                    if !m3.is_exact() {
+                        panic!()
+                    }
+                    assert_eq!(expected.clone().to_vec(), m3.to_vec());
+                } else {
+                    overflow = true;
+                    break;
+                }
+            }
+            if overflow {
+                println!("exact signed u64 gpu: overflow");
+            } else {
+                println!("exact signed u64 gpu: {:.2?}", before.elapsed());
+            }
+        }
+
+        // f32/f64 gpu
         {
             let before = Instant::now();
             for m in &matrices_f64 {
@@ -461,7 +518,7 @@ mod tests {
                 }
             }
 
-            println!("approx f64 gpu:    {:.2?}", before.elapsed());
+            println!("approx f32/f64 gpu:    {:.2?}", before.elapsed());
         }
 
         // f64 cpu
