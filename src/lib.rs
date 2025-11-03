@@ -1,9 +1,10 @@
 // pub mod choose_randomly;
+pub mod constant_fraction;
 pub mod ebi_matrix;
 pub mod ebi_number;
 pub mod exact;
+pub mod exporter;
 pub mod parsing;
-
 pub mod matrix {
     pub mod exact;
     pub mod fraction_matrix;
@@ -16,7 +17,6 @@ pub mod matrix {
     pub mod mul;
     pub mod mul_gpu;
 }
-
 pub mod fraction {
     pub mod choose_randomly;
     pub mod exact;
@@ -38,9 +38,11 @@ pub mod shader {
     pub mod state;
 }
 
+pub use crate::constant_fraction::*;
 pub use crate::ebi_matrix::*;
 pub use crate::ebi_number::*;
 pub use crate::exact::*;
+pub use crate::exporter::Exporter;
 pub use crate::fraction::choose_randomly::FractionRandomCache;
 pub use crate::fraction::fraction::Fraction;
 pub use crate::matrix::fraction_matrix::FractionMatrix;

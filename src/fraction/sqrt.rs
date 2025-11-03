@@ -1,5 +1,5 @@
 use crate::{
-    Recip, Signed, Sqrt,
+    One, Recip, Signed, Sqrt, Zero,
     fraction::{
         fraction_enum::FractionEnum, fraction_exact::FractionExact, fraction_f64::FractionF64,
     },
@@ -8,7 +8,7 @@ use anyhow::{Result, anyhow};
 use malachite::{
     Integer, Natural,
     base::num::{
-        basic::traits::{One, Two, Zero},
+        basic::traits::{One as MOne, Two, Zero as MZero},
         conversion::traits::IsInteger,
         logic::traits::SignificantBits,
     },
@@ -70,6 +70,14 @@ impl Sqrt for Rational {
             return Err(anyhow!(
                 "cannot calculate the square root of negative values"
             ));
+        }
+
+        if self.is_one() {
+            return Ok(Self::ONE);
+        }
+
+        if self.is_zero() {
+            return Ok(Self::ZERO);
         }
 
         // First try whether the result is an integer
@@ -164,7 +172,7 @@ fn sqrt_search(low: &Natural, high: &Natural, n: &Natural) -> Natural {
 mod test {
     use malachite::rational::Rational;
 
-    use crate::Sqrt;
+    use crate::{One, Sqrt, Zero};
 
     #[test]
     fn sqrt_exact() {
@@ -176,5 +184,11 @@ mod test {
         assert_eq!(nine.approx_sqrt(4).unwrap(), three);
 
         assert_eq!(two.approx_sqrt(4).unwrap(), sqrttwo);
+    }
+
+    #[test]
+    fn sqrt_zero() {
+        assert_eq!(Rational::one().approx_abs_sqrt(1), Rational::one());
+        assert_eq!(Rational::zero().approx_abs_sqrt(1), Rational::zero());
     }
 }
