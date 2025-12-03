@@ -19,7 +19,7 @@ use malachite::{
 use crate::{ebi_number::Zero, fraction::fraction::EPSILON};
 
 #[derive(Debug, Clone, Copy)]
-pub struct FractionF64(pub(crate) f64);
+pub struct FractionF64(pub f64);
 
 impl Default for FractionF64 {
     fn default() -> Self {

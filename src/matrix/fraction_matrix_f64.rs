@@ -9,9 +9,9 @@ use anyhow::{Error, Result, anyhow};
 
 #[derive(Clone, Debug)]
 pub struct FractionMatrixF64 {
-    pub(crate) values: Vec<f64>,
-    pub(crate) number_of_rows: usize,
-    pub(crate) number_of_columns: usize,
+    pub values: Vec<f64>,
+    pub number_of_rows: usize,
+    pub number_of_columns: usize,
 }
 
 impl FractionMatrixF64 {

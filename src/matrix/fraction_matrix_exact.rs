@@ -14,9 +14,9 @@ use crate::{
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FractionMatrixExact {
-    pub(crate) values: Vec<Rational>,
-    pub(crate) number_of_rows: usize,
-    pub(crate) number_of_columns: usize,
+    pub values: Vec<Rational>,
+    pub number_of_rows: usize,
+    pub number_of_columns: usize,
 }
 
 impl FractionMatrixExact {
@@ -29,7 +29,10 @@ impl FractionMatrixExact {
     }
 
     pub(crate) fn denominators(&self) -> Vec<Natural> {
-        self.values.iter().map(|v| v.clone().into_denominator()).collect()
+        self.values
+            .iter()
+            .map(|v| v.clone().into_denominator())
+            .collect()
     }
 }
 

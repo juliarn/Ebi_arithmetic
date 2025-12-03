@@ -27,6 +27,13 @@ pub struct GpuSignedU64 {
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct GpuI128 {
+    pub number: [u32; 4],
+    pub sign: u32,
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Dimensions {
     pub n: u32,
     pub m: u32,
@@ -195,7 +202,7 @@ where
                 let buffer_slice = download_buffer.slice(..);
                 buffer_slice.map_async(wgpu::MapMode::Read, |_| {});
 
-                device.poll(wgpu::PollType::Wait).unwrap();
+                device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
 
                 let data = buffer_slice.get_mapped_range();
                 let result: &[T] = bytemuck::cast_slice(&data);

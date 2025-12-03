@@ -13,7 +13,7 @@ use std::{
 use crate::ebi_number::Zero;
 
 #[derive(Clone)]
-pub struct FractionExact(pub(crate) Rational);
+pub struct FractionExact(pub Rational);
 
 impl Default for FractionExact {
     fn default() -> Self {
