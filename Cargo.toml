@@ -22,7 +22,7 @@ approximatearithmetic = []
 [dependencies]
 anyhow = "1.0.100"
 rand = "0.9.2"
-malachite = { version="0.7.0", features = ["random", "32_bit_limbs"] }
+malachite = { version="0.7.0", features = ["random"] }
 serial_test = "3.2.0"
 wgpu = "27.0.1"
 bytemuck = "1.23.2"

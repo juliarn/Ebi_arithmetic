@@ -190,7 +190,11 @@ where
                         });
                     compute_pass.set_pipeline(&compute_pipeline);
                     compute_pass.set_bind_group(0, &bind_group, &[]);
-                    compute_pass.dispatch_workgroups(dims.n, dims.p, 1);
+                    compute_pass.dispatch_workgroups(
+                        dims.n.div_ceil(16u32),
+                        dims.p.div_ceil(16u32),
+                        1,
+                    );
                     drop(compute_pass);
 
                     encoder.copy_buffer_to_buffer(&c_buffer, 0, &download_buffer, 0, c_buffer_size);

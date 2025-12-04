@@ -16,7 +16,7 @@ var<uniform> dims: Dimensions;
 @group(0) @binding(3)
 var<storage, read_write> C: array<f64>;
 
-@compute @workgroup_size(16, 16)
+@compute @workgroup_size(16, 16, 1)
 fn mul(@builtin(global_invocation_id) id: vec3<u32>) {
     let n = dims.n; // Number of rows of a
     let m = dims.m; // Number of columns of a (and rows of b)
