@@ -1,10 +1,10 @@
-use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use ebi_arithmetic::fraction::fraction_exact::FractionExact;
 use ebi_arithmetic::fraction::fraction_f64::FractionF64;
 use ebi_arithmetic::matrix::fraction_matrix_exact::FractionMatrixExact;
 use ebi_arithmetic::matrix::fraction_matrix_f64::FractionMatrixF64;
 use ebi_arithmetic::matrix::mul_gpu::{
-    run_mul_approx_f32, run_mul_approx_f64, run_mul_exact, run_mul_exact_i64,
+    run_mul_approx_f32, run_mul_approx_f32_slow, run_mul_approx_f64, run_mul_exact_i64,
 };
 use ebi_arithmetic::shader::state::COMPUTE_SHADERS;
 use itertools::izip;
@@ -12,9 +12,10 @@ use rand::Rng;
 
 pub fn bench_matrix_gpu_approx(c: &mut Criterion) {
     let mut group = c.benchmark_group("Matrix GPU Approx");
-    group.sample_size(10);
+    group.sample_size(20);
 
-    for size in [10, 25, 50, 100, 150, 200, 250, 300, 350, 400, 450, 500].iter() {
+    // Values divisible by 16 for optimal GPU performance
+    for size in [16, 32, 48, 64, 128, 256, 512, 1024, 1280, 2048, 4092, 5120].iter() {
         let mut rng = rand::rng();
         let sqrt = 100000_u64;
         let numerators = vec![rng.random_range(0..sqrt); size * size];
@@ -31,12 +32,16 @@ pub fn bench_matrix_gpu_approx(c: &mut Criterion) {
         // Init Shaders
         let _ = COMPUTE_SHADERS.get_matrix_mul_shader_f32();
 
-        group.bench_function(BenchmarkId::new("Approx CPU", size), |b| {
+        /*group.bench_function(BenchmarkId::new("Approx CPU", size), |b| {
             b.iter(|| (&matrix_f64 * &matrix_f64).unwrap())
-        });
+        });*/
 
         group.bench_function(BenchmarkId::new("Approx GPU f32", size), |b| {
             b.iter(|| run_mul_approx_f32(&numerators, &denominators, *size))
+        });
+
+        group.bench_function(BenchmarkId::new("Approx GPU f32 Slow", size), |b| {
+            b.iter(|| run_mul_approx_f32_slow(&numerators, &denominators, *size))
         });
 
         if COMPUTE_SHADERS.get_matrix_mul_shader_f64().is_available() {
@@ -49,7 +54,7 @@ pub fn bench_matrix_gpu_approx(c: &mut Criterion) {
 
 pub fn bench_matrix_gpu_exact(c: &mut Criterion) {
     let mut group = c.benchmark_group("Matrix GPU Exact");
-    group.sample_size(10);
+    group.sample_size(20);
 
     for size in [
         10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200,
@@ -148,5 +153,8 @@ pub fn bench_matrix_gpu(c: &mut Criterion) {
     }
 }
 
-criterion_group!(matrix_gpu, bench_matrix_gpu_approx, bench_matrix_gpu_exact);
+criterion_group!(
+    matrix_gpu,
+    bench_matrix_gpu_approx, /*bench_matrix_gpu_exact*/
+);
 criterion_main!(matrix_gpu);

@@ -2,19 +2,17 @@ use crate::fraction::signed::Numerator;
 use crate::matrix::fraction_matrix_exact::FractionMatrixExact;
 use crate::matrix::fraction_matrix_f64::FractionMatrixF64;
 use crate::shader::matrix_mul::{
-    Dimensions, GpuI128, GpuRationalU32, GpuRationalU64, GpuSignedU64,
+    Dimensions, GpuRationalU32, GpuRationalU64, GpuSignedU64,
 };
 use crate::shader::state::COMPUTE_SHADERS;
 use crate::{EbiMatrix, One, Signed, Zero};
 use itertools::izip;
 use malachite::base::num::arithmetic::traits::Lcm;
 use malachite::base::num::arithmetic::traits::UnsignedAbs;
-use malachite::platform::Limb;
 use malachite::rational::Rational;
 use malachite::{Integer, Natural};
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
-use std::u128;
 
 pub trait MulGpu {
     type Output;
@@ -347,6 +345,21 @@ pub fn run_mul_approx_f32(numerators: &Vec<u64>, denominators: &Vec<u64>, size: 
     );
 }
 
+pub fn run_mul_approx_f32_slow(numerators: &Vec<u64>, denominators: &Vec<u64>, size: usize) {
+    let values: Vec<f32> = izip!(numerators.iter(), denominators.iter())
+        .map(|(num, denom)| (*num as f32) / (*denom as f32))
+        .collect::<Vec<_>>();
+    COMPUTE_SHADERS.get_matrix_mul_shader_f32_slow().execute(
+        values.clone(),
+        values.clone(),
+        Dimensions {
+            n: size as u32,
+            m: size as u32,
+            p: size as u32,
+        },
+    );
+}
+
 pub fn run_mul_approx_f64(numerators: &Vec<u64>, denominators: &Vec<u64>, size: usize) {
     let values: Vec<f64> = izip!(numerators.iter(), denominators.iter())
         .map(|(num, denom)| (*num as f64) / (*denom as f64))
@@ -569,10 +582,10 @@ pub fn run_mul_exact_i128(numerators: &Vec<u64>, denominators: &Vec<u64>, size: 
 
 #[cfg(test)]
 mod tests {
-    use crate::EbiMatrix;
     use crate::fraction::fraction_exact::FractionExact;
     use crate::matrix::fraction_matrix_exact::FractionMatrixExact;
     use crate::matrix::mul_gpu::MulGpu;
+    use crate::EbiMatrix;
     use itertools::izip;
     use rand::Rng;
 

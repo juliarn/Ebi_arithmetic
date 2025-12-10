@@ -122,6 +122,7 @@ impl GpuState {
 
 pub struct ComputeShaders {
     matrix_mul_shader_f32: MatrixMulShader<f32>,
+    matrix_mul_shader_f32_slow: MatrixMulShader<f32>,
     matrix_mul_shader_f64: MatrixMulShader<f64>,
     matrix_mul_shader_signed_u64: MatrixMulShader<GpuSignedU64>,
     matrix_mul_shader_i128: MatrixMulShader<GpuI128>,
@@ -134,6 +135,7 @@ impl ComputeShaders {
         if !gpu_state.is_available() {
             return ComputeShaders {
                 matrix_mul_shader_f32: MatrixMulShader::NotAvailable,
+                matrix_mul_shader_f32_slow: MatrixMulShader::NotAvailable,
                 matrix_mul_shader_f64: MatrixMulShader::NotAvailable,
                 matrix_mul_shader_signed_u64: MatrixMulShader::NotAvailable,
                 matrix_mul_shader_i128: MatrixMulShader::NotAvailable,
@@ -147,6 +149,10 @@ impl ComputeShaders {
             matrix_mul_shader_f32: MatrixMulShader::new(
                 gpu_state,
                 wgpu::include_wgsl!("matrix_mul_f32.wgsl"),
+            ),
+            matrix_mul_shader_f32_slow: MatrixMulShader::new(
+                gpu_state,
+                wgpu::include_wgsl!("matrix_mul_f32_slow.wgsl"),
             ),
             matrix_mul_shader_f64: if device.features().contains(wgpu::Features::SHADER_F64) {
                 MatrixMulShader::new(gpu_state, wgpu::include_wgsl!("matrix_mul_f64.wgsl"))
@@ -182,6 +188,9 @@ impl ComputeShaders {
 
     pub fn get_matrix_mul_shader_f32(&self) -> &MatrixMulShader<f32> {
         &self.matrix_mul_shader_f32
+    }
+    pub fn get_matrix_mul_shader_f32_slow(&self) -> &MatrixMulShader<f32> {
+        &self.matrix_mul_shader_f32_slow
     }
     pub fn get_matrix_mul_shader_f64(&self) -> &MatrixMulShader<f64> {
         &self.matrix_mul_shader_f64

@@ -16,25 +16,57 @@ var<uniform> dims: Dimensions;
 @group(0) @binding(3)
 var<storage, read_write> C: array<f32>;
 
-@compute @workgroup_size(16, 16, 1)
-fn mul(@builtin(global_invocation_id) id: vec3<u32>) {
-    let n = dims.n; // Number of rows of a
-    let m = dims.m; // Number of columns of a (and rows of b)
-    let p = dims.p; // Number of columns of b
+const TILE: u32 = 16;
 
-    let row = id.x; // Row index in the result matrix c
-    if (row >= n) {
-        return; // Out of bounds
-    }
-    let col = id.y; // Column index in the result matrix c
-    if (col >= p) {
-        return; // Out of bounds
+var<workgroup> Asub : array<array<f32, TILE>, TILE>;
+var<workgroup> Bsub : array<array<f32, TILE>, TILE>;
+
+@compute @workgroup_size(TILE, TILE, 1)
+fn mul(@builtin(local_invocation_id) local_id : vec3<u32>,
+        @builtin(global_invocation_id) global_id : vec3<u32>,
+        @builtin(workgroup_id) workgroup_id : vec3<u32>) {
+    let row = global_id.y;
+    let col = global_id.x;
+    let local_row = local_id.y;
+    let local_col = local_id.x;
+
+    let M = dims.n;
+    let N = dims.m;
+    let K = dims.p;
+
+    var acc: f32 = 0.0;
+
+    let numTiles : u32 = (K + TILE - 1u) / TILE;
+
+    for (var t: u32 = 0u; t < numTiles; t = t + 1u) {
+        let aRow = row;
+        let aCol = t * TILE + local_col;
+        let bRow = t * TILE + local_row;
+        let bCol = col;
+
+        var aVal: f32 = 0.0;
+        if (aRow < M && aCol < K) {
+            let idxA = aRow * K + aCol;
+            aVal = A[idxA];
+        }
+        Asub[local_row][local_col] = aVal;
+
+        var bVal: f32 = 0.0;
+        if (bRow < K && bCol < N) {
+            let idxB = bRow * N + bCol;
+            bVal = B[idxB];
+        }
+        Bsub[local_row][local_col] = bVal;
+
+        workgroupBarrier();
+        for (var kInner: u32 = 0u; kInner < TILE; kInner = kInner + 1u) {
+            acc = acc + Asub[local_row][kInner] * Bsub[kInner][local_col];
+        }
+        workgroupBarrier();
     }
 
-    var sum: f32 = 0.0;
-    for (var k = 0u; k < m; k++) {
-        sum += A[row * m + k] * B[k * p + col];
+    if (row < M && col < N) {
+        let idxC = row * N + col;
+        C[idxC] = acc;
     }
-
-    C[row * p + col] = sum; // Store the result in c
 }
