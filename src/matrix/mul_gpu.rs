@@ -2,7 +2,7 @@ use crate::fraction::signed::Numerator;
 use crate::matrix::fraction_matrix_exact::FractionMatrixExact;
 use crate::matrix::fraction_matrix_f64::FractionMatrixF64;
 use crate::shader::matrix_mul::{
-    Dimensions, GpuRationalU32, GpuRationalU64, GpuSignedU64,
+    Dimensions, GpuRationalU32, GpuRationalU64, GpuSignedU64, MatrixMulShader,
 };
 use crate::shader::state::COMPUTE_SHADERS;
 use crate::{EbiMatrix, One, Signed, Zero};
@@ -92,6 +92,7 @@ impl MulGpu for &FractionMatrixExact {
                     m: m as u32,
                     p: p as u32,
                 },
+                1,
             );
 
             let mut values = vec![Rational::zero(); new.len()];
@@ -134,6 +135,7 @@ impl MulGpu for &FractionMatrixExact {
                     m: m as u32,
                     p: p as u32,
                 },
+                1,
             );
 
             let mut values = vec![Rational::zero(); new.len()];
@@ -244,6 +246,7 @@ impl MulGpu for &FractionMatrixExact {
                     m: m as u32,
                     p: p as u32,
                 },
+                1,
             );
 
             Some(FractionMatrixExact {
@@ -293,6 +296,7 @@ impl MulGpu for &FractionMatrixF64 {
                     m: m as u32,
                     p: p as u32,
                 },
+                1,
             )
         } else {
             // TODO: Only works with f32, so less precision. How to find out that less precision is sufficient?
@@ -312,6 +316,7 @@ impl MulGpu for &FractionMatrixF64 {
                         m: m as u32,
                         p: p as u32,
                     },
+                    1,
                 )
                 .iter()
                 .map(|val| *val as f64)
@@ -330,11 +335,17 @@ impl MulGpu for &FractionMatrixF64 {
     }
 }
 
-pub fn run_mul_approx_f32(numerators: &Vec<u64>, denominators: &Vec<u64>, size: usize) {
+pub fn run_mul_approx_f32(
+    numerators: &Vec<u64>,
+    denominators: &Vec<u64>,
+    size: usize,
+    shader: &MatrixMulShader<f32>,
+    tiling: u32,
+) {
     let values: Vec<f32> = izip!(numerators.iter(), denominators.iter())
         .map(|(num, denom)| (*num as f32) / (*denom as f32))
         .collect::<Vec<_>>();
-    COMPUTE_SHADERS.get_matrix_mul_shader_f32().execute(
+    shader.execute(
         values.clone(),
         values.clone(),
         Dimensions {
@@ -342,21 +353,7 @@ pub fn run_mul_approx_f32(numerators: &Vec<u64>, denominators: &Vec<u64>, size: 
             m: size as u32,
             p: size as u32,
         },
-    );
-}
-
-pub fn run_mul_approx_f32_slow(numerators: &Vec<u64>, denominators: &Vec<u64>, size: usize) {
-    let values: Vec<f32> = izip!(numerators.iter(), denominators.iter())
-        .map(|(num, denom)| (*num as f32) / (*denom as f32))
-        .collect::<Vec<_>>();
-    COMPUTE_SHADERS.get_matrix_mul_shader_f32_slow().execute(
-        values.clone(),
-        values.clone(),
-        Dimensions {
-            n: size as u32,
-            m: size as u32,
-            p: size as u32,
-        },
+        tiling,
     );
 }
 
@@ -372,6 +369,7 @@ pub fn run_mul_approx_f64(numerators: &Vec<u64>, denominators: &Vec<u64>, size: 
             m: size as u32,
             p: size as u32,
         },
+        1,
     );
 }
 
@@ -399,6 +397,7 @@ pub fn run_mul_exact(numerators: &Vec<u64>, denominators: &Vec<u64>, size: usize
             m: size as u32,
             p: size as u32,
         },
+        1,
     );
 }
 
@@ -466,6 +465,7 @@ pub fn run_mul_exact_i64(numerators: &Vec<u64>, denominators: &Vec<u64>, size: u
             m: size as u32,
             p: size as u32,
         },
+        1,
     );
     Some(FractionMatrixExact {
         number_of_columns: size,

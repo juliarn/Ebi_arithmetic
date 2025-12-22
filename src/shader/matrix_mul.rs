@@ -107,7 +107,7 @@ where
         !matches!(self, MatrixMulShader::NotAvailable)
     }
 
-    pub fn execute(&self, a: Vec<T>, b: Vec<T>, dims: Dimensions) -> Vec<T> {
+    pub fn execute(&self, a: Vec<T>, b: Vec<T>, dims: Dimensions, tiling: u32) -> Vec<T> {
         match self {
             MatrixMulShader::NotAvailable => panic!("MatrixMulShader not available"),
             MatrixMulShader::Available {
@@ -191,7 +191,7 @@ where
                     compute_pass.set_pipeline(&compute_pipeline);
                     compute_pass.set_bind_group(0, &bind_group, &[]);
                     compute_pass.dispatch_workgroups(
-                        dims.n.div_ceil(16u32),
+                        dims.n.div_ceil(16u32 / tiling),
                         dims.p.div_ceil(16u32),
                         1,
                     );

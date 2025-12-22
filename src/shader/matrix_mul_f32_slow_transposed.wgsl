@@ -30,10 +30,14 @@ fn mul(@builtin(global_invocation_id) id: vec3<u32>) {
     if (col >= p) {
         return; // Out of bounds
     }
+    
+    let a_idx = row * m;
+    let b_idx = col * m;
 
     var sum: f32 = 0.0;
     for (var k = 0u; k < m; k++) {
-        sum = fma(A[row * m + k], B[k * p + col], sum);
+        // B is transposed
+        sum = fma(A[a_idx + k], B[b_idx + k], sum);
     }
 
     C[row * p + col] = sum; // Store the result in c
