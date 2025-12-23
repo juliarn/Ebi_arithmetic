@@ -357,11 +357,17 @@ pub fn run_mul_approx_f32(
     );
 }
 
-pub fn run_mul_approx_f64(numerators: &Vec<u64>, denominators: &Vec<u64>, size: usize) {
+pub fn run_mul_approx_f64(
+    numerators: &Vec<u64>,
+    denominators: &Vec<u64>,
+    size: usize,
+    shader: &MatrixMulShader<f64>,
+    tiling: u32,
+) {
     let values: Vec<f64> = izip!(numerators.iter(), denominators.iter())
         .map(|(num, denom)| (*num as f64) / (*denom as f64))
         .collect::<Vec<_>>();
-    COMPUTE_SHADERS.get_matrix_mul_shader_f64().execute(
+    shader.execute(
         values.clone(),
         values.clone(),
         Dimensions {
@@ -369,7 +375,7 @@ pub fn run_mul_approx_f64(numerators: &Vec<u64>, denominators: &Vec<u64>, size: 
             m: size as u32,
             p: size as u32,
         },
-        1,
+        tiling,
     );
 }
 
@@ -582,10 +588,10 @@ pub fn run_mul_exact_i128(numerators: &Vec<u64>, denominators: &Vec<u64>, size: 
 
 #[cfg(test)]
 mod tests {
+    use crate::EbiMatrix;
     use crate::fraction::fraction_exact::FractionExact;
     use crate::matrix::fraction_matrix_exact::FractionMatrixExact;
     use crate::matrix::mul_gpu::MulGpu;
-    use crate::EbiMatrix;
     use itertools::izip;
     use rand::Rng;
 

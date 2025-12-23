@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use ebi_arithmetic::fraction::fraction_exact::FractionExact;
 use ebi_arithmetic::fraction::fraction_f64::FractionF64;
 use ebi_arithmetic::matrix::fraction_matrix_exact::FractionMatrixExact;
@@ -13,7 +13,7 @@ pub fn bench_matrix_gpu_approx(c: &mut Criterion) {
     group.sample_size(10);
 
     // Values divisible by 16 for optimal GPU performance
-    for size in [16, 32, 48, 64, 128, 256, 512, 1024, 1280, 2048, 4092, 5120].iter() {
+    for size in [16, 32, 48, 64, 128, 256, 512, 1024, 1280, 2048, 4092].iter() {
         let mut rng = rand::rng();
         let sqrt = 100000_u64;
         let numerators = vec![rng.random_range(0..sqrt); size * size];
@@ -70,7 +70,7 @@ pub fn bench_matrix_gpu_approx(c: &mut Criterion) {
             })
         });
 
-        group.bench_function(
+        /*group.bench_function(
             BenchmarkId::new("Approx GPU f32 Slow Transposed", size),
             |b| {
                 b.iter(|| {
@@ -83,11 +83,51 @@ pub fn bench_matrix_gpu_approx(c: &mut Criterion) {
                     )
                 })
             },
-        );
+        );*/
 
         if COMPUTE_SHADERS.get_matrix_mul_shader_f64().is_available() {
             group.bench_function(BenchmarkId::new("Approx GPU f64", size), |b| {
-                b.iter(|| run_mul_approx_f64(&numerators, &denominators, *size))
+                b.iter(|| {
+                    run_mul_approx_f64(
+                        &numerators,
+                        &denominators,
+                        *size,
+                        COMPUTE_SHADERS.get_matrix_mul_shader_f64(),
+                        4,
+                    )
+                })
+            });
+        }
+        if COMPUTE_SHADERS
+            .get_matrix_mul_shader_f64_slow()
+            .is_available()
+        {
+            group.bench_function(BenchmarkId::new("Approx GPU f64 Slow", size), |b| {
+                b.iter(|| {
+                    run_mul_approx_f64(
+                        &numerators,
+                        &denominators,
+                        *size,
+                        COMPUTE_SHADERS.get_matrix_mul_shader_f64_slow(),
+                        1,
+                    )
+                })
+            });
+        }
+        if COMPUTE_SHADERS
+            .get_matrix_mul_shader_f64_more_tiling()
+            .is_available()
+        {
+            group.bench_function(BenchmarkId::new("Approx GPU f64 More Tiling", size), |b| {
+                b.iter(|| {
+                    run_mul_approx_f64(
+                        &numerators,
+                        &denominators,
+                        *size,
+                        COMPUTE_SHADERS.get_matrix_mul_shader_f64_more_tiling(),
+                        8,
+                    )
+                })
             });
         }
     }
@@ -196,7 +236,15 @@ pub fn bench_matrix_gpu(c: &mut Criterion) {
 
         if COMPUTE_SHADERS.get_matrix_mul_shader_f64().is_available() {
             group.bench_function(BenchmarkId::new("Approx GPU f64", size), |b| {
-                b.iter(|| run_mul_approx_f64(&numerators, &denominators, *size))
+                b.iter(|| {
+                    run_mul_approx_f64(
+                        &numerators,
+                        &denominators,
+                        *size,
+                        COMPUTE_SHADERS.get_matrix_mul_shader_f64(),
+                        4,
+                    )
+                })
             });
         }
     }

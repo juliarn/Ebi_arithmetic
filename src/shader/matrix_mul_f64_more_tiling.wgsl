@@ -23,7 +23,7 @@ fn mul(@builtin(global_invocation_id) global_id : vec3<u32>) {
     let N = dims.p;
 
     let row = global_id.y;
-    let col = global_id.x * 4;
+    let col = global_id.x * 8;
 
     if (row >= M || col >= N) {
         return;
@@ -33,6 +33,10 @@ fn mul(@builtin(global_invocation_id) global_id : vec3<u32>) {
     var sum01: f64 = 0.0;
     var sum02: f64 = 0.0;
     var sum03: f64 = 0.0;
+    var sum04: f64 = 0.0;
+    var sum05: f64 = 0.0;
+    var sum06: f64 = 0.0;
+    var sum07: f64 = 0.0;
 
     for (var i: u32 = 0u; i < K; i = i + 1u) {
         let a_elem = A[row * K + i];
@@ -41,6 +45,10 @@ fn mul(@builtin(global_invocation_id) global_id : vec3<u32>) {
         sum01 = fma(a_elem, B[b_idx + 1u], sum01);
         sum02 = fma(a_elem, B[b_idx + 2u], sum02);
         sum03 = fma(a_elem, B[b_idx + 3u], sum03);
+        sum04 = fma(a_elem, B[b_idx + 4u], sum04);
+        sum05 = fma(a_elem, B[b_idx + 5u], sum05);
+        sum06 = fma(a_elem, B[b_idx + 6u], sum06);
+        sum07 = fma(a_elem, B[b_idx + 7u], sum07);
     }
 
     let c_idx = row * N + col;
@@ -49,4 +57,8 @@ fn mul(@builtin(global_invocation_id) global_id : vec3<u32>) {
     C[c_idx + 1u] = sum01;
     C[c_idx + 2u] = sum02;
     C[c_idx + 3u] = sum03;
+    C[c_idx + 4u] = sum04;
+    C[c_idx + 5u] = sum05;
+    C[c_idx + 6u] = sum06;
+    C[c_idx + 7u] = sum07;
 }
