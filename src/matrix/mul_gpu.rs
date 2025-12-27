@@ -296,7 +296,7 @@ impl MulGpu for &FractionMatrixF64 {
                     m: m as u32,
                     p: p as u32,
                 },
-                1,
+                4,
             )
         } else {
             // TODO: Only works with f32, so less precision. How to find out that less precision is sufficient?
@@ -316,7 +316,7 @@ impl MulGpu for &FractionMatrixF64 {
                         m: m as u32,
                         p: p as u32,
                     },
-                    1,
+                    4,
                 )
                 .iter()
                 .map(|val| *val as f64)
@@ -407,7 +407,7 @@ pub fn run_mul_exact(numerators: &Vec<u64>, denominators: &Vec<u64>, size: usize
     );
 }
 
-pub fn run_mul_exact_i64(numerators: &Vec<u64>, denominators: &Vec<u64>, size: usize) {
+pub fn run_mul_exact_signed_u64(numerators: &Vec<u64>, denominators: &Vec<u64>, size: usize, tiling: u32) {
     let row_lcms: Vec<Natural> = (0..size)
         .into_par_iter()
         .map(|i| {
@@ -471,7 +471,7 @@ pub fn run_mul_exact_i64(numerators: &Vec<u64>, denominators: &Vec<u64>, size: u
             m: size as u32,
             p: size as u32,
         },
-        1,
+        tiling,
     );
     Some(FractionMatrixExact {
         number_of_columns: size,
@@ -493,8 +493,8 @@ pub fn run_mul_exact_i64(numerators: &Vec<u64>, denominators: &Vec<u64>, size: u
     });
 }
 
-pub fn run_mul_exact_i128(numerators: &Vec<u64>, denominators: &Vec<u64>, size: usize) {
-    /*let row_lcms: Vec<Natural> = (0..size)
+pub fn run_mul_exact_i64(numerators: &Vec<u64>, denominators: &Vec<u64>, size: usize, tiling: u32) {
+    let row_lcms: Vec<Natural> = (0..size)
         .into_par_iter()
         .map(|i| {
             (0..size).fold(Natural::one(), |acc, j| {
@@ -537,45 +537,25 @@ pub fn run_mul_exact_i128(numerators: &Vec<u64>, denominators: &Vec<u64>, size: 
     let scaled_signed = scaled
         .into_par_iter()
         .map(|v| {
-            let limbs = v
-                .unsigned_abs_ref()
-                .to_limbs_asc()
-                .iter()
-                .map(|x| *x)
-                .collect::<Vec<_>>();
-            GpuI128 {
-                number: [
-                    *limbs.get(3).unwrap_or(&0u32),
-                    *limbs.get(2).unwrap_or(&0u32),
-                    *limbs.get(1).unwrap_or(&0u32),
-                    *limbs.get(0).unwrap_or(&0u32),
-                ],
-                sign: if v.is_negative() { 0 } else { 1 },
+            if v.is_negative() {
+                -(v.unsigned_abs_ref().limbs()[0] as i64)
+            } else {
+                v.unsigned_abs_ref().limbs()[0] as i64
             }
         })
         .collect::<Vec<_>>();
     let scaled_signed2 = scaled2
         .into_par_iter()
         .map(|v| {
-            let limbs = v
-                .unsigned_abs_ref()
-                .to_limbs_asc()
-                .iter()
-                .map(|x| *x)
-                .collect::<Vec<_>>();
-            GpuI128 {
-                number: [
-                    *limbs.get(3).unwrap_or(&0u32),
-                    *limbs.get(2).unwrap_or(&0u32),
-                    *limbs.get(1).unwrap_or(&0u32),
-                    *limbs.get(0).unwrap_or(&0u32),
-                ],
-                sign: if v.is_negative() { 0 } else { 1 },
+            if v.is_negative() {
+                -(v.unsigned_abs_ref().limbs()[0] as i64)
+            } else {
+                v.unsigned_abs_ref().limbs()[0] as i64
             }
         })
         .collect::<Vec<_>>();
 
-    COMPUTE_SHADERS.get_matrix_mul_shader_i128().execute(
+    let new_scaled = COMPUTE_SHADERS.get_matrix_mul_shader_i64().execute(
         scaled_signed,
         scaled_signed2,
         Dimensions {
@@ -583,17 +563,76 @@ pub fn run_mul_exact_i128(numerators: &Vec<u64>, denominators: &Vec<u64>, size: 
             m: size as u32,
             p: size as u32,
         },
-    );*/
+        tiling,
+    );
+    Some(FractionMatrixExact {
+        number_of_columns: size,
+        number_of_rows: size,
+        values: (0..size)
+            .into_par_iter()
+            .flat_map(|i| {
+                (0..size)
+                    .map(|j| {
+                        let idx = i * size + j;
+                        let val = &new_scaled[idx];
+                        Rational::from(*val) / (Rational::from(&row_lcms[i] * &col_lcms[j]))
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>(),
+    });
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::EbiMatrix;
     use crate::fraction::fraction_exact::FractionExact;
+    use crate::fraction::fraction_f64::FractionF64;
     use crate::matrix::fraction_matrix_exact::FractionMatrixExact;
+    use crate::matrix::fraction_matrix_f64::FractionMatrixF64;
     use crate::matrix::mul_gpu::MulGpu;
+    use crate::EbiMatrix;
     use itertools::izip;
     use rand::Rng;
+
+    #[test]
+    fn fraction_matrix_approx_mul() {
+        let m1: FractionMatrixF64 = vec![
+            vec![
+                FractionF64::from(1),
+                FractionF64::from(2),
+                FractionF64::from(3),
+            ],
+            vec![
+                FractionF64::from(4),
+                FractionF64::from(-5),
+                FractionF64::from(6),
+            ],
+        ]
+        .try_into()
+        .unwrap();
+
+        let m2: FractionMatrixF64 = vec![
+            vec![FractionF64::from(7), FractionF64::from(8)],
+            vec![FractionF64::from(9), FractionF64::from(-10)],
+            vec![FractionF64::from(-11), FractionF64::from(12)],
+        ]
+        .try_into()
+        .unwrap();
+
+        //let prod = (&m1).mul_gpu(&m2).unwrap();
+        let prod_transformed = (&m1).mul_gpu(&m2).unwrap();
+
+        //assert_eq!(prod.number_of_columns(), 2);
+        //assert_eq!(prod.number_of_rows(), 2);
+
+        let m3 = vec![
+            vec![FractionF64::from(-8), FractionF64::from(24)],
+            vec![FractionF64::from(-83), FractionF64::from(154)],
+        ];
+
+        //assert_eq!(prod.clone().to_vec(), m3);
+        assert_eq!(prod_transformed.clone().to_vec(), m3);
+    }
 
     #[test]
     fn fraction_matrix_exact_mul() {

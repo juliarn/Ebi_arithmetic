@@ -16,25 +16,73 @@ var<uniform> dims: Dimensions;
 @group(0) @binding(3)
 var<storage, read_write> C: array<i64>;
 
+const TILING: u32 = 8u;
+
 @compute @workgroup_size(16, 16, 1)
-fn mul(@builtin(global_invocation_id) id: vec3<u32>) {
-    let n = dims.n; // Number of rows of a
-    let m = dims.m; // Number of columns of a (and rows of b)
-    let p = dims.p; // Number of columns of b
+fn mul(@builtin(global_invocation_id) global_id: vec3<u32>) {
+    let n = dims.n;
+    let m = dims.m;
+    let p = dims.p;
 
-    let row = id.x; // Row index in the result matrix c
-    if (row >= n) {
-        return; // Out of bounds
-    }
-    let col = id.y; // Column index in the result matrix c
-    if (col >= p) {
-        return; // Out of bounds
+    let row = global_id.x;
+    let col = global_id.y * TILING;
+
+    if (row >= n || col >= p) {
+        return;
     }
 
-    var sum: i64 = i64(0u);
-    for (var k = 0u; k < m; k++) {
-        sum += A[row * m + k] * B[k * p + col];
+    var sums: array<i64, TILING>;
+
+    for (var k: u32 = 0u; k < m; k++) {
+        let a_elem = A[row * m + k];
+        let b_idx = k * p + col;
+
+        sums[0] = a_elem * B[b_idx] + sums[0];
+        if (col + 1u < p) {
+            sums[1] = a_elem * B[b_idx + 1u] + sums[1];
+        }
+        if (col + 2u < p) {
+            sums[2] = a_elem * B[b_idx + 2u] + sums[2];
+        }
+        if (col + 3u < p) {
+            sums[3] = a_elem * B[b_idx + 3u] + sums[3];
+        }
+        if (col + 4u < p) {
+            sums[4] = a_elem * B[b_idx + 4u] + sums[4];
+        }
+        if (col + 5u < p) {
+            sums[5] = a_elem * B[b_idx + 5u] + sums[5];
+        }
+        if (col + 6u < p) {
+            sums[6] = a_elem * B[b_idx + 6u] + sums[6];
+        }
+        if (col + 7u < p) {
+            sums[7] = a_elem * B[b_idx + 7u] + sums[7];
+        }
     }
 
-    C[row * p + col] = sum; // Store the result in c
+    let c_idx = row * p + col;
+
+    C[c_idx + 0u] = sums[0];
+    if (col + 1u < p) {
+        C[c_idx + 1u] = sums[1];
+    }
+    if (col + 2u < p) {
+        C[c_idx + 2u] = sums[2];
+    }
+    if (col + 3u < p) {
+        C[c_idx + 3u] = sums[3];
+    }
+    if (col + 4u < p) {
+        C[c_idx + 4u] = sums[4];
+    }
+    if (col + 5u < p) {
+        C[c_idx + 5u] = sums[5];
+    }
+    if (col + 6u < p) {
+        C[c_idx + 6u] = sums[6];
+    }
+    if (col + 7u < p) {
+        C[c_idx + 7u] = sums[7];
+    }
 }

@@ -16,7 +16,7 @@ var<uniform> dims: Dimensions;
 @group(0) @binding(3)
 var<storage, read_write> C: array<f32>;
 
-const TILING: u32 = 8u;
+const TILING: u32 = 4u;
 
 @compute @workgroup_size(16, 16)
 fn mul(@builtin(global_invocation_id) global_id : vec3<u32>) {
@@ -24,14 +24,14 @@ fn mul(@builtin(global_invocation_id) global_id : vec3<u32>) {
     let m = dims.m;
     let p = dims.p;
 
-    let row = global_id.x;
-    let col = global_id.y * TILING;
+    let row = global_id.y;
+    let col = global_id.x * TILING;
 
     if (row >= n || col >= p) {
         return;
     }
 
-    var sums: array<f32, TILING>;
+    var sums: array<f32, TILING> = array<f32, TILING>(0.0, 0.0, 0.0, 0.0);
 
     for (var k: u32 = 0u; k < m; k++) {
         let a_elem = A[row * m + k];
@@ -47,18 +47,6 @@ fn mul(@builtin(global_invocation_id) global_id : vec3<u32>) {
         if (col + 3u < p) {
             sums[3] = fma(a_elem, B[b_idx + 3u], sums[3]);
         }
-        if (col + 4u < p) {
-            sums[4] = fma(a_elem, B[b_idx + 4u], sums[4]);
-        }
-        if (col + 5u < p) {
-            sums[5] = fma(a_elem, B[b_idx + 5u], sums[5]);
-        }
-        if (col + 6u < p) {
-            sums[6] = fma(a_elem, B[b_idx + 6u], sums[6]);
-        }
-        if (col + 7u < p) {
-            sums[7] = fma(a_elem, B[b_idx + 7u], sums[7]);
-        }
     }
 
     let c_idx = row * p + col;
@@ -72,17 +60,5 @@ fn mul(@builtin(global_invocation_id) global_id : vec3<u32>) {
     }
     if (col + 3u < p) {
         C[c_idx + 3u] = sums[3];
-    }
-    if (col + 4u < p) {
-        C[c_idx + 4u] = sums[4];
-    }
-    if (col + 5u < p) {
-        C[c_idx + 5u] = sums[5];
-    }
-    if (col + 6u < p) {
-        C[c_idx + 6u] = sums[6];
-    }
-    if (col + 7u < p) {
-        C[c_idx + 7u] = sums[7];
     }
 }

@@ -191,7 +191,7 @@ where
                     compute_pass.set_pipeline(&compute_pipeline);
                     compute_pass.set_bind_group(0, &bind_group, &[]);
                     compute_pass.dispatch_workgroups(
-                        dims.n.div_ceil(16u32 / tiling),
+                        dims.n.div_ceil(16u32 * tiling),
                         dims.p.div_ceil(16u32),
                         1,
                     );

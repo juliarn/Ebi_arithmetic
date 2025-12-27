@@ -1,23 +1,31 @@
-use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use ebi_arithmetic::fraction::fraction_exact::FractionExact;
 use ebi_arithmetic::fraction::fraction_f64::FractionF64;
 use ebi_arithmetic::matrix::fraction_matrix_exact::FractionMatrixExact;
 use ebi_arithmetic::matrix::fraction_matrix_f64::FractionMatrixF64;
-use ebi_arithmetic::matrix::mul_gpu::{run_mul_approx_f32, run_mul_approx_f64, run_mul_exact_i64};
+use ebi_arithmetic::matrix::mul_gpu::{
+    run_mul_approx_f32, run_mul_approx_f64, run_mul_exact_i64,
+    run_mul_exact_signed_u64,
+};
 use ebi_arithmetic::shader::state::COMPUTE_SHADERS;
 use itertools::izip;
 use rand::Rng;
+use std::hint::black_box;
 
 pub fn bench_matrix_gpu_approx(c: &mut Criterion) {
     let mut group = c.benchmark_group("Matrix GPU Approx");
     group.sample_size(10);
 
     // Values divisible by 16 for optimal GPU performance
-    for size in [16, 32, 48, 64, 128, 256, 512, 1024, 1280, 2048, 4092].iter() {
+    for size in [
+        64, 128, 192, 256, 320, 384, 448, 512, 576, 640, 704, 768, 832, 896, 960, 1024, 1088, 1152,
+        1216, 1280, 1344, 1408, 1472, 1536, 1600, 1664, 1728, 1792, 1856, 1920, 1984, 2048,
+    ]
+    .iter()
+    {
         let mut rng = rand::rng();
-        let sqrt = 100000_u64;
-        let numerators = vec![rng.random_range(0..sqrt); size * size];
-        let denominators = vec![rng.random_range(1..sqrt); size * size];
+        let numerators = vec![rng.random_range(1..5); size * size];
+        let denominators = vec![rng.random_range(6..10); size * size];
 
         let matrix_f64 = FractionMatrixF64 {
             number_of_columns: *size,
@@ -30,9 +38,9 @@ pub fn bench_matrix_gpu_approx(c: &mut Criterion) {
         // Init Shaders
         let _ = COMPUTE_SHADERS.get_matrix_mul_shader_f32();
 
-        /*group.bench_function(BenchmarkId::new("Approx CPU", size), |b| {
-            b.iter(|| (&matrix_f64 * &matrix_f64).unwrap())
-        });*/
+        group.bench_function(BenchmarkId::new("Approx CPU", size), |b| {
+            b.iter(|| black_box(black_box(&matrix_f64) * black_box(&matrix_f64)).unwrap())
+        });
 
         group.bench_function(BenchmarkId::new("Approx GPU f32", size), |b| {
             b.iter(|| {
@@ -41,49 +49,10 @@ pub fn bench_matrix_gpu_approx(c: &mut Criterion) {
                     &denominators,
                     *size,
                     COMPUTE_SHADERS.get_matrix_mul_shader_f32(),
-                    4,
-                )
-            })
-        });
-
-        group.bench_function(BenchmarkId::new("Approx GPU f32 More Tiling", size), |b| {
-            b.iter(|| {
-                run_mul_approx_f32(
-                    &numerators,
-                    &denominators,
-                    *size,
-                    COMPUTE_SHADERS.get_matrix_mul_shader_f32_more_tiling(),
                     8,
                 )
             })
         });
-
-        group.bench_function(BenchmarkId::new("Approx GPU f32 Slow", size), |b| {
-            b.iter(|| {
-                run_mul_approx_f32(
-                    &numerators,
-                    &denominators,
-                    *size,
-                    COMPUTE_SHADERS.get_matrix_mul_shader_f32_slow(),
-                    1,
-                )
-            })
-        });
-
-        /*group.bench_function(
-            BenchmarkId::new("Approx GPU f32 Slow Transposed", size),
-            |b| {
-                b.iter(|| {
-                    run_mul_approx_f32(
-                        &numerators,
-                        &denominators,
-                        *size,
-                        COMPUTE_SHADERS.get_matrix_mul_shader_f32_slow(),
-                        1,
-                    )
-                })
-            },
-        );*/
 
         if COMPUTE_SHADERS.get_matrix_mul_shader_f64().is_available() {
             group.bench_function(BenchmarkId::new("Approx GPU f64", size), |b| {
@@ -98,38 +67,6 @@ pub fn bench_matrix_gpu_approx(c: &mut Criterion) {
                 })
             });
         }
-        if COMPUTE_SHADERS
-            .get_matrix_mul_shader_f64_slow()
-            .is_available()
-        {
-            group.bench_function(BenchmarkId::new("Approx GPU f64 Slow", size), |b| {
-                b.iter(|| {
-                    run_mul_approx_f64(
-                        &numerators,
-                        &denominators,
-                        *size,
-                        COMPUTE_SHADERS.get_matrix_mul_shader_f64_slow(),
-                        1,
-                    )
-                })
-            });
-        }
-        if COMPUTE_SHADERS
-            .get_matrix_mul_shader_f64_more_tiling()
-            .is_available()
-        {
-            group.bench_function(BenchmarkId::new("Approx GPU f64 More Tiling", size), |b| {
-                b.iter(|| {
-                    run_mul_approx_f64(
-                        &numerators,
-                        &denominators,
-                        *size,
-                        COMPUTE_SHADERS.get_matrix_mul_shader_f64_more_tiling(),
-                        8,
-                    )
-                })
-            });
-        }
     }
 }
 
@@ -138,15 +75,14 @@ pub fn bench_matrix_gpu_exact(c: &mut Criterion) {
     group.sample_size(10);
 
     for size in [
-        10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200,
-        225, 250,
+        64, 128, 192, 256, 320, 384, 448, 512, 576, 640, 704, 768, 832, 896, 960, 1024, 1088, 1152,
+        1216, 1280, 1344, 1408, 1472, 1536, 1600, 1664, 1728, 1792, 1856, 1920, 1984, 2048,
     ]
     .iter()
     {
         let mut rng = rand::rng();
-        let sqrt = 5_u64;
-        let numerators = vec![rng.random_range(0..sqrt); size * size];
-        let denominators = vec![rng.random_range(1..sqrt); size * size];
+        let numerators = vec![rng.random_range(1..5); size * size];
+        let denominators = vec![rng.random_range(6..10); size * size];
 
         let matrix_exact = FractionMatrixExact {
             number_of_columns: *size,
@@ -160,16 +96,16 @@ pub fn bench_matrix_gpu_exact(c: &mut Criterion) {
         let _ = COMPUTE_SHADERS.get_matrix_mul_shader_exact_u64();
 
         group.bench_function(BenchmarkId::new("Exact CPU", size), |b| {
-            b.iter(|| (&matrix_exact * &matrix_exact).unwrap())
+            b.iter(|| black_box(black_box(&matrix_exact) * black_box(&matrix_exact)).unwrap())
         });
 
-        /*group.bench_function(BenchmarkId::new("Exact GPU", size), |b| {
-            b.iter(|| run_mul_exact(numerators.clone(), denominators.clone(), *size))
+        group.bench_function(BenchmarkId::new("Exact GPU Signed u64", size), |b| {
+            b.iter(|| run_mul_exact_signed_u64(&numerators, &denominators, *size, 8u32))
+        });
+
+        /*group.bench_function(BenchmarkId::new("Exact GPU i64", size), |b| {
+            b.iter(|| run_mul_exact_i64(&numerators, &denominators, *size, 8u32))
         });*/
-
-        group.bench_function(BenchmarkId::new("Exact GPU i64", size), |b| {
-            b.iter(|| run_mul_exact_i64(&numerators, &denominators, *size))
-        });
 
         /*group.bench_function(BenchmarkId::new("Exact GPU i128", size), |b| {
             b.iter(|| run_mul_exact_i128(numerators.clone(), denominators.clone(), *size))
@@ -179,17 +115,17 @@ pub fn bench_matrix_gpu_exact(c: &mut Criterion) {
 
 pub fn bench_matrix_gpu(c: &mut Criterion) {
     let mut group = c.benchmark_group("Matrix GPU");
-    group.sample_size(10);
+    group.sample_size(100);
 
     for size in [
-        10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200,
+        64, 128, 192, 256, 320, 384, 448, 512, 576, 640, 704, 768, 832, 896, 960, 1024, 1088, 1152,
+        1216, 1280, 1344, 1408, 1472, 1536, 1600, 1664, 1728, 1792, 1856, 1920, 1984, 2048,
     ]
     .iter()
     {
         let mut rng = rand::rng();
-        let sqrt = 5_u64;
-        let numerators = vec![rng.random_range(0..sqrt); size * size];
-        let denominators = vec![rng.random_range(1..sqrt); size * size];
+        let numerators = vec![rng.random_range(1..5); size * size];
+        let denominators = vec![rng.random_range(6..10); size * size];
 
         let matrix_f64 = FractionMatrixF64 {
             number_of_columns: *size,
@@ -210,17 +146,17 @@ pub fn bench_matrix_gpu(c: &mut Criterion) {
         // Init Shaders
         let _ = COMPUTE_SHADERS.get_matrix_mul_shader_exact_u64();
 
-        group.bench_function(BenchmarkId::new("Exact CPU", size), |b| {
+        /*group.bench_function(BenchmarkId::new("Exact CPU", size), |b| {
             b.iter(|| (&matrix_exact * &matrix_exact).unwrap())
+        });*/
+
+        group.bench_function(BenchmarkId::new("Exact GPU Signed U64", size), |b| {
+            b.iter(|| run_mul_exact_signed_u64(&numerators, &denominators, *size, 8u32))
         });
 
-        group.bench_function(BenchmarkId::new("Exact GPU i64", size), |b| {
-            b.iter(|| run_mul_exact_i64(&numerators, &denominators, *size))
-        });
-
-        group.bench_function(BenchmarkId::new("Approx CPU", size), |b| {
+        /*group.bench_function(BenchmarkId::new("Approx CPU", size), |b| {
             b.iter(|| (&matrix_f64 * &matrix_f64).unwrap())
-        });
+        });*/
 
         group.bench_function(BenchmarkId::new("Approx GPU f32", size), |b| {
             b.iter(|| {
@@ -229,7 +165,7 @@ pub fn bench_matrix_gpu(c: &mut Criterion) {
                     &denominators,
                     *size,
                     COMPUTE_SHADERS.get_matrix_mul_shader_f32(),
-                    4,
+                    8,
                 )
             })
         });
@@ -242,7 +178,7 @@ pub fn bench_matrix_gpu(c: &mut Criterion) {
                         &denominators,
                         *size,
                         COMPUTE_SHADERS.get_matrix_mul_shader_f64(),
-                        4,
+                        8,
                     )
                 })
             });
@@ -252,6 +188,8 @@ pub fn bench_matrix_gpu(c: &mut Criterion) {
 
 criterion_group!(
     matrix_gpu,
-    bench_matrix_gpu_approx, /*bench_matrix_gpu_exact*/
+    bench_matrix_gpu_approx,
+    bench_matrix_gpu_exact,
+    bench_matrix_gpu
 );
 criterion_main!(matrix_gpu);
