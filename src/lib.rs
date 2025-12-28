@@ -31,6 +31,7 @@ pub mod fraction {
     pub mod signed;
     pub mod sqrt;
     pub mod zero;
+    pub mod approximate;
 }
 
 pub mod shader {

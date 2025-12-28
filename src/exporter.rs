@@ -1,8 +1,6 @@
-use crate::{
-    MaybeExact,
-    fraction::{
-        fraction_enum::FractionEnum, fraction_exact::FractionExact, fraction_f64::FractionF64,
-    },
+use crate::fraction::{
+    approximate::Approximate, fraction_enum::FractionEnum, fraction_exact::FractionExact,
+    fraction_f64::FractionF64,
 };
 use anyhow::Result;
 use malachite::rational::Rational;
@@ -31,8 +29,8 @@ impl Exporter for bool {
 
 impl Exporter for Rational {
     fn export(&self, f: &mut dyn std::io::Write) -> Result<()> {
-        writeln!(f, "{}", self)?;
-        Ok(writeln!(f, "Approximately {:.4}", self)?)
+        writeln!(f, "Approximately {}", self.clone().approximate()?)?;
+        Ok(writeln!(f, "{}", self)?)
     }
 }
 
@@ -44,13 +42,13 @@ impl Exporter for f64 {
 
 impl Exporter for FractionExact {
     fn export(&self, f: &mut dyn std::io::Write) -> Result<()> {
-        self.exact_ref().unwrap().export(f)
+        self.0.export(f)
     }
 }
 
 impl Exporter for FractionF64 {
     fn export(&self, f: &mut dyn std::io::Write) -> Result<()> {
-        self.approx_ref().unwrap().export(f)
+        self.0.export(f)
     }
 }
 

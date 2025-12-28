@@ -1,3 +1,8 @@
+use crate::{
+    ebi_number::Zero,
+    exact::is_exact_globally,
+    fraction::{fraction::EPSILON, fraction_exact::FractionExact},
+};
 use anyhow::{Error, anyhow};
 use malachite::{
     base::{num::conversion::traits::RoundingFrom, rounding_modes::RoundingMode::Nearest},
@@ -12,12 +17,6 @@ use std::{
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign},
     str::FromStr,
     sync::Arc,
-};
-
-use crate::{
-    ebi_number::Zero,
-    exact::is_exact_globally,
-    fraction::{fraction::EPSILON, fraction_exact::FractionExact},
 };
 
 #[derive(Clone)]
@@ -726,12 +725,11 @@ ttype_signed!(i8);
 
 #[cfg(test)]
 mod tests {
-    use std::ops::Neg;
-
     use crate::{
         ebi_number::{One, Signed},
         fraction::fraction_enum::FractionEnum,
     };
+    use std::ops::Neg;
 
     #[test]
     fn fraction_neg() {
