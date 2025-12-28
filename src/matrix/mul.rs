@@ -1,9 +1,3 @@
-use anyhow::{anyhow, Result};
-use malachite::rational::Rational;
-use rayon::iter::IntoParallelIterator;
-use rayon::iter::ParallelIterator;
-use std::ops::Mul;
-
 use crate::fraction::fraction_exact::FractionExact;
 use crate::fraction::fraction_f64::FractionF64;
 use crate::matrix::fraction_matrix_f64::FractionMatrixF64;
@@ -14,6 +8,12 @@ use crate::{
     MaybeExact,
     Zero,
 };
+use anyhow::{anyhow, Result};
+use malachite::rational::Rational;
+use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
+use rayon::iter::{IntoParallelIterator, ParallelBridge};
+use std::ops::Mul;
+use rayon::slice::ParallelSliceMut;
 
 macro_rules! mul_mat_mat {
     ($t:ident, $u:ident, $v:ident) => {
@@ -33,30 +33,22 @@ macro_rules! mul_mat_mat {
 
                 let result_rows = self.number_of_rows();
                 let result_columns = rhs.number_of_columns();
+                let mut result = vec![$v::zero(); result_rows * result_columns];
 
-                let result = (0..result_rows)
-                    .into_par_iter()
-                    .flat_map(|row| {
-                        (0..result_columns)
-                            .into_par_iter()
-                            .map(|column| {
-                                let mut sum = $v::zero();
+                result
+                    .par_chunks_mut(result_columns)
+                    .enumerate()
+                    .for_each(|(row, mut entries)| {
+                        entries
+                            .par_iter_mut()
+                            .enumerate()
+                            .for_each(|(column, result)| {
                                 for k in 0..self.number_of_columns() {
-                                    sum += &self.values[row * self.number_of_columns() + k]
+                                    *result += &self.values[row * self.number_of_columns() + k]
                                         * &rhs.values[k * rhs.number_of_columns() + column];
                                 }
-                                sum
                             })
-                            .collect::<Vec<_>>()
-                    })
-                    .collect::<Vec<_>>();
-
-                /*iproduct!(0..result_rows, 0..result_columns).for_each(|(row, column)| {
-                    for k in 0..self.number_of_columns() {
-                        result[row * result_columns + column] +=
-                            &self.values[row * self.number_of_columns() + k] * &rhs.values[k * rhs.number_of_columns() + column];
-                    }
-                });*/
+                    });
 
                 Ok($t {
                     values: result,
@@ -123,6 +115,47 @@ macro_rules! mul_mat_vec {
         }
     };
 }
+
+/*impl Mul for &FractionMatrixF64 {
+    type Output = Result<f64>;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        if self.number_of_columns() != rhs.number_of_rows() {
+            return Err(anyhow!(
+                "cannot multiply matrix of size {}x{} with a matrix of size {}x{}",
+                self.number_of_rows(),
+                self.number_of_columns(),
+                rhs.number_of_rows(),
+                rhs.number_of_columns()
+            ));
+        }
+
+        let result_rows = self.number_of_rows();
+        let result_columns = rhs.number_of_columns();
+        let mut result = vec![f64::zero(); result_rows * result_columns];
+
+        result
+            .par_chunks_mut(result_columns)
+            .enumerate()
+            .for_each(|(row, mut entries)| {
+                entries
+                    .par_iter_mut()
+                    .enumerate()
+                    .for_each(|(column, result)| {
+                        for k in 0..self.number_of_columns() {
+                            *result += *(&self.values[row * self.number_of_columns() + k]
+                                * &rhs.values[k * rhs.number_of_columns() + column]);
+                        }
+                    })
+            });
+
+        Ok(FractionMatrixF64 {
+            values: result,
+            number_of_columns: result_columns,
+            number_of_rows: result_rows,
+        })
+    }
+}*/
 
 // ===================== f64 =====================
 

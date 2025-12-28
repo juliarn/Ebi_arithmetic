@@ -4,8 +4,7 @@ use ebi_arithmetic::fraction::fraction_f64::FractionF64;
 use ebi_arithmetic::matrix::fraction_matrix_exact::FractionMatrixExact;
 use ebi_arithmetic::matrix::fraction_matrix_f64::FractionMatrixF64;
 use ebi_arithmetic::matrix::mul_gpu::{
-    run_mul_approx_f32, run_mul_approx_f64, run_mul_exact_i64,
-    run_mul_exact_signed_u64,
+    run_mul_approx_f32, run_mul_approx_f64, run_mul_exact_signed_u64,
 };
 use ebi_arithmetic::shader::state::COMPUTE_SHADERS;
 use itertools::izip;
@@ -19,7 +18,7 @@ pub fn bench_matrix_gpu_approx(c: &mut Criterion) {
     // Values divisible by 16 for optimal GPU performance
     for size in [
         64, 128, 192, 256, 320, 384, 448, 512, 576, 640, 704, 768, 832, 896, 960, 1024, 1088, 1152,
-        1216, 1280, 1344, 1408, 1472, 1536, 1600, 1664, 1728, 1792, 1856, 1920, 1984, 2048,
+        1216, 1280, 1344, 1408, 1472,
     ]
     .iter()
     {
@@ -75,8 +74,8 @@ pub fn bench_matrix_gpu_exact(c: &mut Criterion) {
     group.sample_size(10);
 
     for size in [
-        64, 128, 192, 256, 320, 384, 448, 512, 576, 640, 704, 768, 832, 896, 960, 1024, 1088, 1152,
-        1216, 1280, 1344, 1408, 1472, 1536, 1600, 1664, 1728, 1792, 1856, 1920, 1984, 2048,
+        64, 128, 192, 256, 320, 384, 448, 512, 576, 640, 704, 768, /*832, 896, 960, 1024, 1088, 1152,
+        1216, 1280, 1344, 1408, 1472,*/
     ]
     .iter()
     {
