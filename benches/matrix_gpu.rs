@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use ebi_arithmetic::fraction::fraction_exact::FractionExact;
 use ebi_arithmetic::fraction::fraction_f64::FractionF64;
 use ebi_arithmetic::matrix::fraction_matrix_exact::FractionMatrixExact;
@@ -85,8 +85,7 @@ pub fn bench_matrix_gpu_approx(c: &mut Criterion) {
 
     // Values divisible by 16 for optimal GPU performance
     for size in [
-        64, 128, 192, 256, 320, 384, 448, 512, 576, 640, 704, 768, 832, 896, 960, 1024, 1088, 1152,
-        1216, 1280, 1344, 1408, 1472,
+        32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448, 480, 512,
     ]
     .iter()
     {
@@ -130,7 +129,7 @@ pub fn bench_matrix_gpu_approx(c: &mut Criterion) {
                         &denominators,
                         *size,
                         COMPUTE_SHADERS.get_matrix_mul_shader_f64(),
-                        4,
+                        8,
                     )
                 })
             });
@@ -143,9 +142,7 @@ pub fn bench_matrix_gpu_exact(c: &mut Criterion) {
     group.sample_size(10);
 
     for size in [
-        64, 128, 192, 256, 320, 384, 448, 512, 576, 640, 704,
-        768, /*832, 896, 960, 1024, 1088, 1152,
-            1216, 1280, 1344, 1408, 1472,*/
+        32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448, 480, 512,
     ]
     .iter()
     {
@@ -256,11 +253,5 @@ pub fn bench_matrix_gpu(c: &mut Criterion) {
     }
 }
 
-criterion_group!(
-    matrix_gpu,
-    bench_distribution_exact,
-    bench_distribution_approx /*bench_matrix_gpu_approx,
-                              bench_matrix_gpu_exact,
-                              bench_matrix_gpu*/
-);
+criterion_group!(matrix_gpu, bench_matrix_gpu_approx, bench_matrix_gpu_exact,);
 criterion_main!(matrix_gpu);

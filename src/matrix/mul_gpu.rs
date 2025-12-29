@@ -248,7 +248,7 @@ impl MulGpu for &FractionMatrixExact {
                     m: m as u32,
                     p: p as u32,
                 },
-                1,
+                8,
             );
 
             Some(FractionMatrixExact {
@@ -298,7 +298,7 @@ impl MulGpu for &FractionMatrixF64 {
                     m: m as u32,
                     p: p as u32,
                 },
-                4,
+                8,
             )
         } else {
             // TODO: Only works with f32, so less precision. How to find out that less precision is sufficient?
@@ -318,7 +318,7 @@ impl MulGpu for &FractionMatrixF64 {
                         m: m as u32,
                         p: p as u32,
                     },
-                    4,
+                    8,
                 )
                 .iter()
                 .map(|val| *val as f64)
