@@ -6,6 +6,8 @@ use crate::shader::matrix_mul::{
 };
 use crate::shader::state::COMPUTE_SHADERS;
 use crate::{EbiMatrix, One, Signed, Zero};
+use criterion::measurement::WallTime;
+use criterion::{Bencher, BenchmarkGroup, BenchmarkId};
 use itertools::izip;
 use malachite::base::num::arithmetic::traits::Lcm;
 use malachite::base::num::arithmetic::traits::UnsignedAbs;
@@ -341,20 +343,38 @@ pub fn run_mul_approx_f32(
     size: usize,
     shader: &MatrixMulShader<f32>,
     tiling: u32,
+    mut bench: Option<&mut BenchmarkGroup<WallTime>>,
 ) {
     let values: Vec<f32> = izip!(numerators.iter(), denominators.iter())
         .map(|(num, denom)| (*num as f32) / (*denom as f32))
         .collect::<Vec<_>>();
-    shader.execute(
-        values.clone(),
-        values.clone(),
-        Dimensions {
-            n: size as u32,
-            m: size as u32,
-            p: size as u32,
-        },
-        tiling,
-    );
+    if let Some(ref mut bench) = bench {
+        bench.bench_function(BenchmarkId::new("GPU Time", size), |b: &mut Bencher| {
+            b.iter(|| {
+                shader.execute(
+                    values.clone(),
+                    values.clone(),
+                    Dimensions {
+                        n: size as u32,
+                        m: size as u32,
+                        p: size as u32,
+                    },
+                    tiling,
+                );
+            });
+        });
+    } else {
+        shader.execute(
+            values.clone(),
+            values.clone(),
+            Dimensions {
+                n: size as u32,
+                m: size as u32,
+                p: size as u32,
+            },
+            tiling,
+        );
+    }
 }
 
 pub fn run_mul_approx_f64(
@@ -379,35 +399,74 @@ pub fn run_mul_approx_f64(
     );
 }
 
-pub fn run_mul_exact(numerators: &Vec<u64>, denominators: &Vec<u64>, size: usize) {
-    let rationals = izip!(numerators.iter(), denominators.iter())
-        .map(|(n, d)| GpuRationalU32 {
-            sign: if n.is_negative() { 0 } else { 1 },
-            num: *n as u32,
-            den: *d as u32,
-        })
-        .collect::<Vec<_>>();
-    let rationals2 = izip!(numerators.iter(), denominators.iter())
-        .map(|(n, d)| GpuRationalU32 {
-            sign: if n.is_negative() { 0 } else { 1 },
-            num: *n as u32,
-            den: *d as u32,
-        })
-        .collect::<Vec<_>>();
+pub fn run_mul_exact_signed_u64(
+    numerators: &Vec<u64>,
+    denominators: &Vec<u64>,
+    size: usize,
+    tiling: u32,
+    mut bench: Option<&mut BenchmarkGroup<WallTime>>,
+) {
+    if let Some(ref mut bench) = bench {
+        bench.bench_function(BenchmarkId::new("Scaling", size), |b: &mut Bencher| {
+            b.iter(|| {
+                let row_lcms: Vec<Natural> = (0..size)
+                    .into_par_iter()
+                    .map(|i| {
+                        (0..size).fold(Natural::one(), |acc, j| {
+                            acc.lcm(Natural::from(denominators[i * size + j]))
+                        })
+                    })
+                    .collect();
+                let col_lcms: Vec<Natural> = (0..size)
+                    .into_par_iter()
+                    .map(|j| {
+                        (0..size).fold(Natural::one(), |acc, i| {
+                            acc.lcm(Natural::from(denominators[i * size + j]))
+                        })
+                    })
+                    .collect();
+                let scaled: Vec<Integer> = (0..size)
+                    .into_par_iter()
+                    .flat_map(|i| {
+                        (0..size)
+                            .map(|j| {
+                                let index = i * size + j;
+                                let factor = &row_lcms[i] / Natural::from(denominators[index]);
+                                Integer::from(numerators[index]) * Integer::from(factor)
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .collect();
+                let scaled2: Vec<Integer> = (0..size)
+                    .into_par_iter()
+                    .flat_map(|i| {
+                        (0..size)
+                            .map(|j| {
+                                let index = i * size + j;
+                                let factor = &col_lcms[j] / Natural::from(denominators[index]);
+                                Integer::from(numerators[index]) * Integer::from(factor)
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .collect();
+                scaled
+                    .into_par_iter()
+                    .map(|v| GpuSignedU64 {
+                        value: v.unsigned_abs_ref().limbs()[0] as u64,
+                        sign: if v.is_negative() { 0 } else { 1 },
+                    })
+                    .collect::<Vec<_>>();
+                scaled2
+                    .into_par_iter()
+                    .map(|v| GpuSignedU64 {
+                        value: v.unsigned_abs_ref().limbs()[0] as u64,
+                        sign: if v.is_negative() { 0 } else { 1 },
+                    })
+                    .collect::<Vec<_>>();
+            });
+        });
+    }
 
-    COMPUTE_SHADERS.get_matrix_mul_shader_exact_u32().execute(
-        rationals,
-        rationals2,
-        Dimensions {
-            n: size as u32,
-            m: size as u32,
-            p: size as u32,
-        },
-        1,
-    );
-}
-
-pub fn run_mul_exact_signed_u64(numerators: &Vec<u64>, denominators: &Vec<u64>, size: usize, tiling: u32) {
     let row_lcms: Vec<Natural> = (0..size)
         .into_par_iter()
         .map(|i| {
@@ -463,6 +522,22 @@ pub fn run_mul_exact_signed_u64(numerators: &Vec<u64>, denominators: &Vec<u64>, 
         })
         .collect::<Vec<_>>();
 
+    if let Some(ref mut bench) = bench {
+        bench.bench_function(BenchmarkId::new("GPU Time", size), |b: &mut Bencher| {
+            b.iter(|| {
+                COMPUTE_SHADERS.get_matrix_mul_shader_signed_u64().execute(
+                    scaled_signed.clone(),
+                    scaled_signed2.clone(),
+                    Dimensions {
+                        n: size as u32,
+                        m: size as u32,
+                        p: size as u32,
+                    },
+                    tiling,
+                )
+            });
+        });
+    }
     let new_scaled = COMPUTE_SHADERS.get_matrix_mul_shader_signed_u64().execute(
         scaled_signed,
         scaled_signed2,
@@ -473,6 +548,31 @@ pub fn run_mul_exact_signed_u64(numerators: &Vec<u64>, denominators: &Vec<u64>, 
         },
         tiling,
     );
+
+    if let Some(ref mut bench) = bench {
+        bench.bench_function(
+            BenchmarkId::new("Reconstruction", size),
+            |b: &mut Bencher| {
+                b.iter(|| {
+                    (0..size)
+                        .into_par_iter()
+                        .flat_map(|i| {
+                            (0..size)
+                                .map(|j| {
+                                    let idx = i * size + j;
+                                    let val = &new_scaled[idx];
+                                    Rational::from(val.value)
+                                        * Rational::from(if val.sign == 0 { 1 } else { -1 })
+                                        / (Rational::from(&row_lcms[i] * &col_lcms[j]))
+                                })
+                                .collect::<Vec<_>>()
+                        })
+                        .collect::<Vec<_>>();
+                });
+            },
+        );
+    }
+
     Some(FractionMatrixExact {
         number_of_columns: size,
         number_of_rows: size,

@@ -11,7 +11,6 @@ use crate::{
 use anyhow::{anyhow, Result};
 use malachite::rational::Rational;
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
-use rayon::iter::{IntoParallelIterator, ParallelBridge};
 use std::ops::Mul;
 use rayon::slice::ParallelSliceMut;
 
@@ -38,7 +37,7 @@ macro_rules! mul_mat_mat {
                 result
                     .par_chunks_mut(result_columns)
                     .enumerate()
-                    .for_each(|(row, mut entries)| {
+                    .for_each(|(row, entries)| {
                         entries
                             .par_iter_mut()
                             .enumerate()
